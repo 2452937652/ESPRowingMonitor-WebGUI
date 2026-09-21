@@ -18,6 +18,9 @@ const END_COLOR = [20, 101, 211] as const;
 /**
  * Small, dependency-free trend visualisation shared by every dashboard metric.
  * It intentionally keeps the real sample positions while only smoothing the SVG path.
+ * Samples are normalized per metric: the largest value in the visible window is
+ * always the darkest blue. Distance passes instantaneous speed samples, so its
+ * color describes rowing rate rather than the monotonically increasing total.
  */
 @Component({
     selector: "app-metric-trend-chart",
@@ -77,8 +80,8 @@ const END_COLOR = [20, 101, 211] as const;
             :host {
                 display: block;
                 width: 100%;
-                height: 2.1rem;
-                min-height: 1.6rem;
+                height: 1.45rem;
+                min-height: 1.25rem;
             }
 
             .trend-chart {

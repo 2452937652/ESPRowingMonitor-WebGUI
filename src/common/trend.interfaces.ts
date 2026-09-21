@@ -3,7 +3,8 @@ export type TrendStyle = "bars" | "line" | "area";
 
 /** Metric keys whose values can be represented by the shared micro-trend component. */
 export type TrendMetricKey =
-    | "distance"
+    /** Instantaneous rowing speed derived from the distance delta, not cumulative distance. */
+    | "distanceRate"
     | "pace"
     | "power"
     | "strokeRate"
@@ -23,7 +24,7 @@ export type TrendMetricKey =
 export type TrendHistory = Readonly<Record<TrendMetricKey, ReadonlyArray<number>>>;
 
 export const EMPTY_TREND_HISTORY: TrendHistory = {
-    distance: [],
+    distanceRate: [],
     pace: [],
     power: [],
     strokeRate: [],
@@ -40,4 +41,3 @@ export const EMPTY_TREND_HISTORY: TrendHistory = {
     driveLength: [],
     totalWork: [],
 };
-

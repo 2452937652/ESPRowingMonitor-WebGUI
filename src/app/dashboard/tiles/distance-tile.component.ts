@@ -14,7 +14,7 @@ import { MetricComponent } from "../metric/metric.component";
             [icon]="icon()"
             [value]="(distance() | number: (isImperial() ? '0.0-2' : '0.0-0')) ?? '--'"
             [unit]="isImperial() ? 'mi' : 'm'"
-            [trendSamples]="trendHistory().distance"
+            [trendSamples]="trendHistory().distanceRate"
             [trendStyle]="trendStyle()"
         ></app-metric>
     `,
