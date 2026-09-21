@@ -1,0 +1,6 @@
+{
+  "buildCommand": "npm run build",
+  "installCommand": "npm install",
+  "outputDirectory": "./dist/esp-rowing-monitor-client/browser",
+  "nodeVersion": "22.11.0"
+}
