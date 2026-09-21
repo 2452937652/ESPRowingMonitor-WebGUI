@@ -26,6 +26,7 @@ import {
     IDisplayAveragingConfig,
     IDisplayLayoutConfig,
     OrientationLock,
+    TrendStyle,
     UnitSystem,
 } from "../../../../common/common.interfaces";
 import { ConfigManagerService } from "../../../../common/services/config-manager.service";
@@ -44,6 +45,7 @@ type DisplaySettingsFormGroup = FormGroup<{
     showGridLines: FormControl<boolean>;
     showAxisLabels: FormControl<boolean>;
     unitSystem: FormControl<UnitSystem>;
+    trendStyle: FormControl<TrendStyle>;
     averagingMode: FormControl<AveragingMode>;
     averagingWindowSize: FormControl<number>;
 }>;
@@ -128,6 +130,7 @@ export class DisplaySettingsComponent {
             showGridLines: [config.display.forceCurve.showGridLines],
             showAxisLabels: [config.display.forceCurve.showAxisLabels],
             unitSystem: [config.display.general.unitSystem],
+            trendStyle: [config.display.general.trendStyle ?? "bars"],
             averagingMode: [config.display.averaging.mode],
             averagingWindowSize: [config.display.averaging.windowSize],
         });

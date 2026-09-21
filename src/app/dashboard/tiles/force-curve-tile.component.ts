@@ -50,10 +50,17 @@ import { isKayakErgometer } from "../../../common/utils/utility.functions";
 
             mat-card {
                 height: 100%;
+                min-height: 100%;
+                box-sizing: border-box;
+                padding: 0.8rem;
+                border: 1px solid rgba(38, 113, 184, 0.12);
+                border-radius: 20px;
+                background: rgba(255, 255, 255, 0.94);
+                box-shadow: 0 10px 28px rgba(27, 78, 125, 0.1);
             }
 
             canvas {
-                padding: 0.4em;
+                padding: 0.2rem;
             }
         `,
     ],
@@ -128,7 +135,7 @@ export class ForceCurveTileComponent {
         };
         this._forceChartOptions.scales.y.ticks = {
             display: shouldShowAxisLabels,
-            color: "rgba(0,0,0)",
+                    color: "#49647f",
         };
 
         if (handleForcesData.length === 0) {
@@ -180,7 +187,7 @@ export class ForceCurveTileComponent {
                 font: {
                     size: 16,
                 },
-                color: "rgb(0,0,0)",
+                color: "#49647f",
             },
             legend: {
                 title: {
@@ -188,7 +195,7 @@ export class ForceCurveTileComponent {
                     text: "Force Curve",
                     color: "rgb(0,0,0)",
                     font: {
-                        size: 32,
+                        size: 18,
                     },
                     padding: {},
                 },
@@ -207,7 +214,8 @@ export class ForceCurveTileComponent {
                 ticks: { stepSize: 1 },
             },
             y: {
-                ticks: { color: "rgba(0,0,0)" },
+                ticks: { color: "#49647f" },
+                grid: { color: "rgba(42, 117, 188, 0.12)" },
             },
         },
         animations: {
@@ -232,8 +240,8 @@ export class ForceCurveTileComponent {
                 fill: true,
                 label: "",
                 data: [],
-                borderColor: "rgb(31,119,180)",
-                backgroundColor: "rgb(31,119,180,0.5)",
+                borderColor: "#1674d1",
+                backgroundColor: "rgba(87, 174, 235, 0.28)",
                 pointRadius: 0,
             },
         ],

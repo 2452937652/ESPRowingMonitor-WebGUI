@@ -42,6 +42,11 @@ import {
 } from "./dashboard-tile-definitions";
 import { DashboardTileDefinition, PlacedDashboardTile } from "./dashboard.interfaces";
 import { SettingsBarComponent } from "./settings-bar/settings-bar.component";
+import {
+    EMPTY_TREND_HISTORY,
+    TrendHistory,
+    TrendMetricKey,
+} from "../../common/trend.interfaces";
 
 type AverageableMetricKey = Exclude<
     keyof ICalculatedMetrics,
@@ -110,6 +115,7 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
     readonly gridRows: Signal<number>;
     readonly rowingData: Signal<ICalculatedMetrics>;
     readonly deviceName: Signal<string | undefined>;
+    readonly trendHistory: Signal<TrendHistory>;
 
     readonly tileEntries: Signal<
         ReadonlyMap<DashboardTileId, { component: Type<DashboardTileComponent>; inputs: TileComponentInputs }>
@@ -162,6 +168,8 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
                                 ],
                             ),
                         ),
+                        trendHistory: this.trendHistory(),
+                        trendStyle: this.displayConfig().general.trendStyle ?? "bars",
                         label: entry.label,
                         ...(entry.icon !== undefined ? { icon: entry.icon } : {}),
                     })),
@@ -179,6 +187,8 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
         elapseTime: (): number => this.elapseTime(),
         displayConfig: (): IDisplayConfig => this.displayConfig(),
         deviceName: (): string | undefined => this.deviceName(),
+        trendHistory: (): TrendHistory => this.trendHistory(),
+        trendStyle: (): "bars" | "line" | "area" => this.displayConfig().general.trendStyle ?? "bars",
     };
 
     private readonly isDeviceOrientationPortrait: Signal<boolean>;
@@ -206,6 +216,37 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
                 .connectionStatus$()
                 .pipe(map((status: { deviceName?: string }): string | undefined => status.deviceName)),
             { initialValue: undefined },
+        );
+
+        this.trendHistory = toSignal(
+            this.sessionManager.sessionMetrics$.pipe(
+                scan(
+                    (
+                        state: {
+                            history: TrendHistory;
+                            lastMetrics: ICalculatedMetrics | undefined;
+                            lastStrokeCount: number;
+                            lastTimestamp: number;
+                        },
+                        current: ICalculatedMetrics,
+                    ) => DashboardComponent.updateTrendHistory(state, current),
+                    {
+                        history: EMPTY_TREND_HISTORY,
+                        lastMetrics: undefined,
+                        lastStrokeCount: 0,
+                        lastTimestamp: 0,
+                    },
+                ),
+                map(
+                    (state: {
+                        history: TrendHistory;
+                        lastMetrics: ICalculatedMetrics | undefined;
+                        lastStrokeCount: number;
+                        lastTimestamp: number;
+                    }): TrendHistory => state.history,
+                ),
+            ),
+            { initialValue: EMPTY_TREND_HISTORY },
         );
 
         this.rowingData = toSignal(
@@ -353,5 +394,80 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
                 ]),
             ),
         } as ICalculatedMetrics;
+    }
+
+    private static updateTrendHistory(
+        state: {
+            history: TrendHistory;
+            lastMetrics: ICalculatedMetrics | undefined;
+            lastStrokeCount: number;
+            lastTimestamp: number;
+        },
+        current: ICalculatedMetrics,
+    ): {
+        history: TrendHistory;
+        lastMetrics: ICalculatedMetrics | undefined;
+        lastStrokeCount: number;
+        lastTimestamp: number;
+    } {
+        if (current.strokeCount === 0) {
+            return state.lastStrokeCount === 0
+                ? state
+                : {
+                      history: EMPTY_TREND_HISTORY,
+                      lastMetrics: undefined,
+                      lastStrokeCount: 0,
+                      lastTimestamp: 0,
+                  };
+        }
+
+        // Session metrics can emit several times while a stroke is being calculated.
+        // Sampling only when the stroke count changes keeps history independent of the display refresh rate.
+        if (current.strokeCount === state.lastStrokeCount) {
+            return state;
+        }
+
+        const now = Date.now();
+        const previous = state.lastMetrics;
+        const elapsedSeconds =
+            state.lastTimestamp === 0 ? 0 : Math.max((now - state.lastTimestamp) / 1000, 0.05);
+        const currentDistanceMeters = current.distance / 100;
+        const previousDistanceMeters = previous?.distance === undefined ? currentDistanceMeters : previous.distance / 100;
+        const deltaSpeed = Math.max(0, currentDistanceMeters - previousDistanceMeters) / Math.max(elapsedSeconds, 0.05);
+        const rowingSpeed = current.speed > 0 ? current.speed : deltaSpeed;
+        const intervalRate = elapsedSeconds > 0 ? 60 / elapsedSeconds : current.strokeRate;
+        const values: Partial<Record<TrendMetricKey, number>> = {
+            distance: deltaSpeed,
+            pace: rowingSpeed,
+            power: current.avgStrokePower,
+            strokeRate: current.strokeRate,
+            timer: elapsedSeconds,
+            distPerStroke: current.distPerStroke,
+            totalStrokes: intervalRate,
+            dragFactor: current.dragFactor,
+            driveTime: current.driveDuration,
+            recoveryTime: current.recoveryDuration,
+            peakForce: current.peakForce,
+            peakForcePositionNorm: current.peakForcePositionNorm,
+            speed: current.speed,
+            driveLength: current.driveLength,
+            totalWork: current.totalWork,
+        };
+        const history: Record<TrendMetricKey, ReadonlyArray<number>> = { ...state.history };
+
+        for (const [key, value] of Object.entries(values) as Array<[TrendMetricKey, number | undefined]>) {
+            if (value === undefined || !Number.isFinite(value)) {
+                continue;
+            }
+
+            history[key] = [...history[key], value].slice(-10);
+        }
+
+        return {
+            history,
+            lastMetrics: current,
+            lastStrokeCount: current.strokeCount,
+            lastTimestamp: now,
+        };
     }
 }

@@ -7,6 +7,9 @@ import {
 import { PlacedDashboardTile } from "../app/dashboard/dashboard.interfaces";
 
 import { BleServiceFlag, LogLevel } from "./ble.interfaces";
+import { TrendStyle } from "./trend.interfaces";
+
+export type { TrendStyle } from "./trend.interfaces";
 
 // general
 
@@ -88,6 +91,8 @@ export interface IGeneralConfig {
 
 export interface IDisplayGeneralConfig {
     unitSystem: UnitSystem;
+    /** Optional for backwards compatibility with saved pre-trend configurations. */
+    trendStyle?: TrendStyle;
 }
 
 /**
@@ -150,6 +155,7 @@ export class Config {
     display: IDisplayConfig = {
         general: {
             unitSystem: "metric",
+            trendStyle: "bars",
         },
         forceCurve: {
             showPeakForceInTitle: true,

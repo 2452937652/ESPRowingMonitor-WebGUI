@@ -17,6 +17,12 @@
                 <mat-button-toggle value="landscape">Landscape</mat-button-toggle>
                 <mat-button-toggle value="portrait">Portrait</mat-button-toggle>
             </mat-button-toggle-group>
+            <label>Trend style:</label>
+            <mat-button-toggle-group formControlName="trendStyle" hideSingleSelectionIndicator>
+                <mat-button-toggle value="bars">Gradient bars</mat-button-toggle>
+                <mat-button-toggle value="line">Line + dots</mat-button-toggle>
+                <mat-button-toggle value="area">Smooth area</mat-button-toggle>
+            </mat-button-toggle-group>
         </div>
         <mat-divider></mat-divider>
         <h4>Metrics Averaging</h4>

@@ -2,6 +2,7 @@ import { DecimalPipe } from "@angular/common";
 import { ChangeDetectionStrategy, Component, computed, input, InputSignal, Signal } from "@angular/core";
 
 import { ICalculatedMetrics, IDisplayConfig, UnitSystem } from "../../../common/common.interfaces";
+import { EMPTY_TREND_HISTORY, TrendHistory, TrendStyle } from "../../../common/trend.interfaces";
 import { MetersToFeetPipe } from "../../../common/utils/meters-to-feet.pipe";
 import { MetricComponent } from "../metric/metric.component";
 
@@ -17,6 +18,8 @@ import { MetricComponent } from "../metric/metric.component";
                     : ((distPerStroke() | number: '0.0-1') ?? '--')
             "
             [unit]="unitSystem() === 'imperial' ? 'ft/stk' : 'm/stk'"
+            [trendSamples]="trendHistory().distPerStroke"
+            [trendStyle]="trendStyle()"
         ></app-metric>
     `,
     changeDetection: ChangeDetectionStrategy.OnPush,
@@ -27,6 +30,8 @@ export class DistPerStrokeTileComponent {
     readonly icon: InputSignal<string | undefined> = input<string | undefined>();
     readonly rowingData: InputSignal<ICalculatedMetrics> = input.required<ICalculatedMetrics>();
     readonly displayConfig: InputSignal<IDisplayConfig> = input.required<IDisplayConfig>();
+    readonly trendHistory: InputSignal<TrendHistory> = input<TrendHistory>(EMPTY_TREND_HISTORY);
+    readonly trendStyle: InputSignal<TrendStyle> = input<TrendStyle>("bars");
 
     readonly distPerStroke: Signal<number> = computed((): number => this.rowingData().distPerStroke);
     readonly unitSystem: Signal<UnitSystem> = computed(

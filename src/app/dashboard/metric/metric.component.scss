@@ -1,55 +1,98 @@
 mat-card {
+    position: relative;
     container-type: size;
     height: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
+    border: 1px solid rgba(38, 113, 184, 0.1);
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.92);
+    box-shadow: 0 8px 24px rgba(27, 78, 125, 0.08);
 }
 
 .metric {
-    padding: 0.1em;
-    font-size: min(clamp(1.2rem, 70cqmin, 30rem), clamp(1.2rem, 25cqmax, 30rem), clamp(1.2rem, 25cqi, 30rem));
-    align-items: center;
-    gap: min(16px, 0.15em);
+    min-width: 0;
+    padding: clamp(0.55rem, 2.8cqi, 1.1rem);
+    align-items: stretch;
+    gap: 0.25rem;
+    color: #12233d;
+    font-size: 1rem;
 
     @container (min-aspect-ratio: 2/1) {
-        flex-direction: row;
-        align-items: center;
-        justify-content: space-evenly;
-        gap: 0.2em;
-
-        font-size: min(clamp(2rem, 70cqmin, 30rem), clamp(1.2rem, 21cqmax, 30rem));
+        align-items: stretch;
+        font-size: 1rem;
     }
+}
+
+.metric-heading {
+    display: flex;
+    width: 100%;
+    min-width: 0;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 0.4em;
+    color: #49647f;
+    min-height: 1.25rem;
 }
 
 mat-icon {
-    height: 100%;
-    width: 100%;
+    flex: 0 0 auto;
+    width: 1.2em;
+    height: 1.2em;
     text-align: center;
-
-    font-size: 0.6em;
-
-    @container (min-aspect-ratio: 2/1) {
-        height: auto;
-        width: auto;
-    }
+    color: #1674d1;
+    font-size: 1.15rem;
 }
 
 .title {
-    text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
 
-    font-size: 0.4em;
+.caption {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
 }
 
 .value {
     display: flex;
     align-items: baseline;
     flex-wrap: nowrap;
-    text-align: center;
+    width: 100%;
+    min-width: 0;
+    text-align: left;
+    line-height: 1;
 
     > span:first-child {
-        font-size: var(--metric-value-font-size, 100%);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: #102447;
+        font-size: var(--metric-value-font-size, clamp(1.65rem, 12cqi, 2.85rem));
+        font-weight: 760;
+        letter-spacing: -0.045em;
     }
 
     .unit {
         padding-left: 0.2em;
-        font-size: 50%;
+        color: #637a93;
+        font-size: 0.78rem;
+        font-weight: 650;
+        letter-spacing: 0.02em;
     }
+}
+
+app-metric-trend-chart {
+    width: 100%;
+    margin-top: auto;
 }

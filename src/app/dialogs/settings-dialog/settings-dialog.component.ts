@@ -363,7 +363,7 @@ export class SettingsDialogComponent {
             const formValue = displaySettingsForm.getRawValue();
 
             this.configManager.setGroup("display", {
-                general: { unitSystem: formValue.unitSystem },
+                general: { unitSystem: formValue.unitSystem, trendStyle: formValue.trendStyle },
                 forceCurve: {
                     showPeakForceInTitle: formValue.showPeakForceInTitle,
                     showGridLines: formValue.showGridLines,

@@ -1,18 +1,24 @@
 <mat-card class="justify-center">
-    <ng-content></ng-content>
     <div class="flex-col justify-center metric">
-        @if (icon() === undefined) {
-            <span class="title">
-                {{ title() }}
-            </span>
-        }
-        @if (icon()) {
-            <mat-icon matTooltipPosition="above" matTooltipShowDelay="1000" [matTooltip]="title() ?? ''">{{
-                icon()
-            }}</mat-icon>
-        }
+        <div class="metric-heading">
+            @if (icon() === undefined) {
+                <span class="title">{{ title() }}</span>
+            }
+            @if (icon()) {
+                <mat-icon matTooltipPosition="above" matTooltipShowDelay="1000" [matTooltip]="title() ?? ''">{{
+                    icon()
+                }}</mat-icon>
+                <span class="caption">{{ title() }}</span>
+            }
+        </div>
         <div class="value">
             <span> {{ value() }} </span> <span class="unit"> {{ unit() }} </span>
         </div>
+        <app-metric-trend-chart
+            [samples]="trendSamples()"
+            [chartStyle]="trendStyle()"
+            [label]="title() ?? ''"
+        ></app-metric-trend-chart>
     </div>
+    <ng-content></ng-content>
 </mat-card>

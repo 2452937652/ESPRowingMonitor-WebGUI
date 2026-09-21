@@ -2,6 +2,7 @@ import { DecimalPipe } from "@angular/common";
 import { ChangeDetectionStrategy, Component, computed, input, InputSignal, Signal } from "@angular/core";
 
 import { ICalculatedMetrics, IDisplayConfig } from "../../../common/common.interfaces";
+import { EMPTY_TREND_HISTORY, TrendHistory, TrendStyle } from "../../../common/trend.interfaces";
 import { MetersToMilesPipe } from "../../../common/utils/meters-to-miles.pipe";
 import { MetricComponent } from "../metric/metric.component";
 
@@ -13,6 +14,8 @@ import { MetricComponent } from "../metric/metric.component";
             [icon]="icon()"
             [value]="(distance() | number: (isImperial() ? '0.0-2' : '0.0-0')) ?? '--'"
             [unit]="isImperial() ? 'mi' : 'm'"
+            [trendSamples]="trendHistory().distance"
+            [trendStyle]="trendStyle()"
         ></app-metric>
     `,
     changeDetection: ChangeDetectionStrategy.OnPush,
@@ -23,6 +26,8 @@ export class DistanceTileComponent {
     readonly icon: InputSignal<string | undefined> = input<string | undefined>();
     readonly rowingData: InputSignal<ICalculatedMetrics> = input.required<ICalculatedMetrics>();
     readonly displayConfig: InputSignal<IDisplayConfig> = input.required<IDisplayConfig>();
+    readonly trendHistory: InputSignal<TrendHistory> = input<TrendHistory>(EMPTY_TREND_HISTORY);
+    readonly trendStyle: InputSignal<TrendStyle> = input<TrendStyle>("bars");
 
     readonly isImperial: Signal<boolean> = computed(
         (): boolean => this.displayConfig().general.unitSystem === "imperial",

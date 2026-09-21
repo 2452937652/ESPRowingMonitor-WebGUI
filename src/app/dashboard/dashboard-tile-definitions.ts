@@ -5,7 +5,9 @@ import {
     IDashboardLayoutConfig,
     IDisplayConfig,
     IHeartRate,
+    TrendStyle,
 } from "../../common/common.interfaces";
+import { TrendHistory } from "../../common/trend.interfaces";
 import { TileDefinition } from "../dialogs/settings-dialog/tile-layout-editor/utils/tile-layout.interfaces";
 
 import { DistPerStrokeTileComponent } from "./tiles/dist-per-stroke-tile.component";
@@ -33,6 +35,8 @@ export interface DashboardContext {
     elapseTime: number;
     displayConfig: IDisplayConfig;
     deviceName: string | undefined;
+    trendHistory: TrendHistory;
+    trendStyle: TrendStyle;
 }
 
 /**
@@ -140,7 +144,7 @@ const TILE_REGISTRY = {
         label: "Force Curve",
         icon: "show_chart",
         defaultRowSpan: 2,
-        defaultColumnSpan: 1,
+        defaultColumnSpan: 2,
         minRowSpan: 1,
         minColumnSpan: 1,
         component: ForceCurveTileComponent,
@@ -282,12 +286,12 @@ const TILE_REGISTRY = {
 export const DASHBOARD_TILE_DEFINITIONS = Object.values(TILE_REGISTRY) as Array<DashboardTileDefinition>;
 
 export const LANDSCAPE_GRID_COLUMNS = 4;
-export const LANDSCAPE_GRID_ROWS = 3;
-export const PORTRAIT_GRID_COLUMNS = 3;
-export const PORTRAIT_GRID_ROWS = 4;
+export const LANDSCAPE_GRID_ROWS = 4;
+export const PORTRAIT_GRID_COLUMNS = 2;
+export const PORTRAIT_GRID_ROWS = 7;
 
 /**
- * Default landscape layout (4 columns × 3 rows).
+ * Default landscape layout (4 columns × 4 rows).
  * Tiles listed here will appear in the default landscape dashboard layout.
  */
 export const DEFAULT_LANDSCAPE_LAYOUT: IDashboardLayoutConfig = {
@@ -297,31 +301,31 @@ export const DEFAULT_LANDSCAPE_LAYOUT: IDashboardLayoutConfig = {
         { id: "power", position: { rowStart: 1, columnStart: 3, rowSpan: 1, columnSpan: 1 } },
         { id: "strokeRate", position: { rowStart: 1, columnStart: 4, rowSpan: 1, columnSpan: 1 } },
         { id: "timer", position: { rowStart: 2, columnStart: 1, rowSpan: 1, columnSpan: 1 } },
-        { id: "forceCurve", position: { rowStart: 2, columnStart: 2, rowSpan: 2, columnSpan: 1 } },
-        { id: "distPerStroke", position: { rowStart: 2, columnStart: 3, rowSpan: 1, columnSpan: 1 } },
-        { id: "totalStrokes", position: { rowStart: 2, columnStart: 4, rowSpan: 1, columnSpan: 1 } },
+        { id: "forceCurve", position: { rowStart: 2, columnStart: 2, rowSpan: 2, columnSpan: 2 } },
+        { id: "distPerStroke", position: { rowStart: 2, columnStart: 4, rowSpan: 1, columnSpan: 1 } },
+        { id: "totalStrokes", position: { rowStart: 3, columnStart: 4, rowSpan: 1, columnSpan: 1 } },
         { id: "dragFactor", position: { rowStart: 3, columnStart: 1, rowSpan: 1, columnSpan: 1 } },
-        { id: "driveTime", position: { rowStart: 3, columnStart: 3, rowSpan: 1, columnSpan: 1 } },
-        { id: "recoveryTime", position: { rowStart: 3, columnStart: 4, rowSpan: 1, columnSpan: 1 } },
+        { id: "driveTime", position: { rowStart: 4, columnStart: 2, rowSpan: 1, columnSpan: 1 } },
+        { id: "recoveryTime", position: { rowStart: 4, columnStart: 3, rowSpan: 1, columnSpan: 1 } },
     ],
 };
 
 /**
- * Default portrait layout (3 columns × 4 rows).
+ * Default portrait layout (2 columns × 7 rows).
  * Tiles listed here will appear in the default portrait dashboard layout.
  */
 export const DEFAULT_PORTRAIT_LAYOUT: IDashboardLayoutConfig = {
     tiles: [
         { id: "distance", position: { rowStart: 1, columnStart: 1, rowSpan: 1, columnSpan: 1 } },
         { id: "pace", position: { rowStart: 1, columnStart: 2, rowSpan: 1, columnSpan: 1 } },
-        { id: "strokeRate", position: { rowStart: 1, columnStart: 3, rowSpan: 1, columnSpan: 1 } },
         { id: "power", position: { rowStart: 2, columnStart: 1, rowSpan: 1, columnSpan: 1 } },
-        { id: "timer", position: { rowStart: 2, columnStart: 2, rowSpan: 1, columnSpan: 1 } },
-        { id: "distPerStroke", position: { rowStart: 2, columnStart: 3, rowSpan: 1, columnSpan: 1 } },
-        { id: "forceCurve", position: { rowStart: 4, columnStart: 1, rowSpan: 1, columnSpan: 2 } },
-        { id: "totalStrokes", position: { rowStart: 4, columnStart: 3, rowSpan: 1, columnSpan: 1 } },
-        { id: "dragFactor", position: { rowStart: 3, columnStart: 1, rowSpan: 1, columnSpan: 1 } },
-        { id: "driveTime", position: { rowStart: 3, columnStart: 2, rowSpan: 1, columnSpan: 1 } },
-        { id: "recoveryTime", position: { rowStart: 3, columnStart: 3, rowSpan: 1, columnSpan: 1 } },
+        { id: "strokeRate", position: { rowStart: 2, columnStart: 2, rowSpan: 1, columnSpan: 1 } },
+        { id: "timer", position: { rowStart: 3, columnStart: 1, rowSpan: 1, columnSpan: 1 } },
+        { id: "distPerStroke", position: { rowStart: 3, columnStart: 2, rowSpan: 1, columnSpan: 1 } },
+        { id: "dragFactor", position: { rowStart: 4, columnStart: 1, rowSpan: 1, columnSpan: 1 } },
+        { id: "totalStrokes", position: { rowStart: 4, columnStart: 2, rowSpan: 1, columnSpan: 1 } },
+        { id: "driveTime", position: { rowStart: 5, columnStart: 1, rowSpan: 1, columnSpan: 1 } },
+        { id: "recoveryTime", position: { rowStart: 5, columnStart: 2, rowSpan: 1, columnSpan: 1 } },
+        { id: "forceCurve", position: { rowStart: 6, columnStart: 1, rowSpan: 2, columnSpan: 2 } },
     ],
 };

@@ -28,10 +28,10 @@ html {
             selected-state-text-color: var(--mat-sys-primary),
         )
     );
-    @include mat.toolbar-overrides(
+@include mat.toolbar-overrides(
         (
-            container-background-color: var(--mat-sys-primary),
-            container-text-color: white,
+            container-background-color: #ffffff,
+            container-text-color: #12233d,
         )
     );
 }
@@ -40,7 +40,12 @@ html,
 body {
     height: 100vh;
     margin: 0px;
-    font-family: Roboto, "Helvetica Neue", sans-serif;
+    font-family: "Avenir Next", "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    color: #12233d;
+    background:
+        radial-gradient(circle at 8% 0%, rgba(135, 207, 255, 0.32), transparent 33%),
+        radial-gradient(circle at 92% 12%, rgba(217, 241, 255, 0.75), transparent 28%),
+        linear-gradient(145deg, #f7fbff 0%, #f1f7fd 55%, #f9fcff 100%);
 
     app-root {
         font-size: calc(16px + (50 - 16) * ((100vw - 300px) / (1920 - 300)));

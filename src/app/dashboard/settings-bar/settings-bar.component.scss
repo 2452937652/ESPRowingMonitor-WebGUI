@@ -19,9 +19,16 @@ mat-toolbar {
     grid-template-columns: max-content 1fr max-content;
     font-size: 0.7em;
 
+    min-height: 64px;
+    color: #12233d;
+    background: rgba(255, 255, 255, 0.88);
+    border-bottom: 1px solid rgba(42, 117, 188, 0.1);
+    box-shadow: 0 4px 18px rgba(24, 83, 136, 0.08);
+    backdrop-filter: blur(18px);
+
     @include mat.icon-overrides(
         (
-            color: white,
+            color: #1674d1,
         )
     );
 
@@ -47,10 +54,21 @@ mat-toolbar {
 
     > .title {
         justify-self: self-end;
+        color: #102447;
+        font-weight: 750;
+        letter-spacing: -0.02em;
 
         @include flex-layout.xs {
             display: none;
         }
+    }
+}
+
+button[mat-icon-button] {
+    border-radius: 12px;
+
+    &:hover {
+        background: #eaf5ff;
     }
 }
 
