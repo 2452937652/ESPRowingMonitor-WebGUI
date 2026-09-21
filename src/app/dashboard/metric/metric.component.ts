@@ -20,5 +20,6 @@ export class MetricComponent {
     readonly unit: InputSignal<string | undefined> = input();
     readonly value: InputSignal<string | number> = input.required<string | number>();
     readonly trendSamples: InputSignal<ReadonlyArray<number>> = input<ReadonlyArray<number>>([]);
+    readonly trendIntensitySamples: InputSignal<ReadonlyArray<number>> = input<ReadonlyArray<number>>([]);
     readonly trendStyle: InputSignal<TrendStyle> = input<TrendStyle>("bars");
 }

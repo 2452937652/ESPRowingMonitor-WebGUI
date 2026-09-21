@@ -3,7 +3,8 @@ export type TrendStyle = "bars" | "line" | "area";
 
 /** Metric keys whose values can be represented by the shared micro-trend component. */
 export type TrendMetricKey =
-    /** Instantaneous rowing speed derived from the distance delta, not cumulative distance. */
+    | "distance"
+    /** Instantaneous rowing speed used to color the cumulative distance trend. */
     | "distanceRate"
     | "pace"
     | "power"
@@ -24,6 +25,7 @@ export type TrendMetricKey =
 export type TrendHistory = Readonly<Record<TrendMetricKey, ReadonlyArray<number>>>;
 
 export const EMPTY_TREND_HISTORY: TrendHistory = {
+    distance: [],
     distanceRate: [],
     pace: [],
     power: [],

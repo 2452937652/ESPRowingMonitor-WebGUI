@@ -19,8 +19,8 @@ const END_COLOR = [20, 101, 211] as const;
  * Small, dependency-free trend visualisation shared by every dashboard metric.
  * It intentionally keeps the real sample positions while only smoothing the SVG path.
  * Samples are normalized per metric: the largest value in the visible window is
- * always the darkest blue. Distance passes instantaneous speed samples, so its
- * color describes rowing rate rather than the monotonically increasing total.
+ * always the darkest blue. A metric may provide a second intensity series when
+ * its plotted value and color meaning differ, as Distance does.
  */
 @Component({
     selector: "app-metric-trend-chart",
@@ -140,30 +140,37 @@ const END_COLOR = [20, 101, 211] as const;
 export class MetricTrendChartComponent {
     readonly baseline: number = BASELINE;
     readonly samples: InputSignal<ReadonlyArray<number>> = input<ReadonlyArray<number>>([]);
+    readonly intensitySamples: InputSignal<ReadonlyArray<number>> = input<ReadonlyArray<number>>([]);
     readonly chartStyle: InputSignal<TrendStyle> = input<TrendStyle>("bars");
     readonly label: InputSignal<string> = input<string>("");
 
     readonly points: Signal<ReadonlyArray<TrendPoint>> = computed((): ReadonlyArray<TrendPoint> => {
         const values = this.samples().filter((value: number): boolean => Number.isFinite(value));
+        const intensityValues = this.intensitySamples().filter((value: number): boolean => Number.isFinite(value));
+        const colorValues = intensityValues.length === values.length ? intensityValues : values;
 
         if (values.length === 0) {
             return [];
         }
 
-        const min = Math.min(...values);
-        const max = Math.max(...values);
-        const spread = max - min;
+        const valueMin = Math.min(...values);
+        const valueMax = Math.max(...values);
+        const valueSpread = valueMax - valueMin;
+        const colorMin = Math.min(...colorValues);
+        const colorMax = Math.max(...colorValues);
+        const colorSpread = colorMax - colorMin;
         const step = values.length === 1 ? 0 : (CHART_WIDTH - 4) / (values.length - 1);
 
         return values.map((value: number, index: number): TrendPoint => {
-            const intensity = spread === 0 ? 0.5 : (value - min) / spread;
-            const y = BASELINE - (TOP + intensity * (BASELINE - TOP));
+            const valueIntensity = valueSpread === 0 ? 0.5 : (value - valueMin) / valueSpread;
+            const colorIntensity = colorSpread === 0 ? 0.5 : (colorValues[index] - colorMin) / colorSpread;
+            const y = BASELINE - (TOP + valueIntensity * (BASELINE - TOP));
 
             return {
                 x: values.length === 1 ? CHART_WIDTH / 2 : 2 + index * step,
                 y,
-                intensity,
-                color: this.interpolateColor(intensity),
+                intensity: colorIntensity,
+                color: this.interpolateColor(colorIntensity),
             };
         });
     });

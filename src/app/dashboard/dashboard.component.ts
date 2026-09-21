@@ -437,10 +437,11 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
         const rowingSpeed = current.speed > 0 ? current.speed : deltaSpeed;
         const intervalRate = elapsedSeconds > 0 ? 60 / elapsedSeconds : current.strokeRate;
         const values: Partial<Record<TrendMetricKey, number>> = {
-            // Distance is cumulative, so its trend samples must represent the
-            // instantaneous rate of change. The chart uses this value for both
-            // height and color intensity; a longer session must not become
-            // darker merely because its total distance is larger.
+            // Distance remains cumulative for the plotted line. The separate
+            // distanceRate sample drives its color intensity, so a longer
+            // session does not become darker merely because its total distance
+            // is larger.
+            distance: currentDistanceMeters,
             distanceRate: rowingSpeed,
             pace: rowingSpeed,
             power: current.avgStrokePower,

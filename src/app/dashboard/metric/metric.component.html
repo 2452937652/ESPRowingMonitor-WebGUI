@@ -16,6 +16,7 @@
         </div>
         <app-metric-trend-chart
             [samples]="trendSamples()"
+            [intensitySamples]="trendIntensitySamples()"
             [chartStyle]="trendStyle()"
             [label]="title() ?? ''"
         ></app-metric-trend-chart>
