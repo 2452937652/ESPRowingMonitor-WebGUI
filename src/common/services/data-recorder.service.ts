@@ -92,6 +92,7 @@ export class DataRecorderService {
                     strokeId: rowingData.strokeCount,
                     handleForces: rowingData.handleForces,
                     driveLength: rowingData.driveLength,
+                    forceCurve: rowingData.forceCurve,
                 }),
             ]);
         });
@@ -446,6 +447,7 @@ export class DataRecorderService {
                                 : 0,
                         driveLength: entity.driveLength,
                         handleForces: entity.handleForces,
+                        forceCurve: entity.forceCurve,
                     };
                 }
 

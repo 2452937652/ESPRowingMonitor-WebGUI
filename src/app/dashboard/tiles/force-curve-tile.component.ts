@@ -3,6 +3,7 @@ import {
     Component,
     computed,
     effect,
+    inject,
     input,
     InputSignal,
     Signal,
@@ -25,7 +26,8 @@ import {
 import ChartDataLabels, { Context } from "chartjs-plugin-datalabels";
 import { BaseChartDirective, provideCharts } from "ng2-charts";
 
-import { ICalculatedMetrics, IDisplayConfig } from "../../../common/common.interfaces";
+import { ICalculatedMetrics, IDisplayConfig, IForceCurvePoint } from "../../../common/common.interfaces";
+import { LanguageService } from "../../../common/services/language.service";
 import { isKayakErgometer } from "../../../common/utils/utility.functions";
 
 @Component({
@@ -83,6 +85,8 @@ import { isKayakErgometer } from "../../../common/utils/utility.functions";
     ],
 })
 export class ForceCurveTileComponent {
+    private static readonly FORCE_CURVE_DISPLAY_MAX_DISTANCE_METERS: number = 2;
+
     readonly label: InputSignal<string> = input.required<string>();
     readonly icon: InputSignal<string | undefined> = input<string | undefined>();
     readonly rowingData: InputSignal<ICalculatedMetrics> = input.required<ICalculatedMetrics>();
@@ -100,6 +104,52 @@ export class ForceCurveTileComponent {
     readonly handleForces: Signal<Array<number>> = computed(
         (): Array<number> => this.rowingData().handleForces,
     );
+    readonly forceCurve: Signal<Array<IForceCurvePoint>> = computed((): Array<IForceCurvePoint> => {
+        const data = this.rowingData();
+        if (data.forceCurve !== undefined && data.forceCurve.length > 0) {
+            return data.forceCurve;
+        }
+
+        const driveLength = data.driveLength;
+        const forces = data.handleForces;
+        // legacy records do not always carry driveLength. Preserve their sample-index
+        // spacing instead of collapsing every point onto x=0.
+        const sampleDistance = forces.length > 1 && driveLength > 0 ? driveLength / (forces.length - 1) : 1;
+
+        return forces.map((force: number, index: number): IForceCurvePoint => ({
+            distance: sampleDistance * index,
+            elapsedTime: 0,
+            force,
+        }));
+    });
+    readonly curvePoints: Signal<Array<Point>> = computed((): Array<Point> => {
+        const samples = this.forceCurve();
+        if (samples.length === 0) {
+            return [];
+        }
+
+        const data = this.rowingData();
+        const hasPhysicalCurve = data.forceCurve !== undefined && data.forceCurve.length > 0;
+        const driveLength = Math.max(data.driveLength, samples[samples.length - 1].distance);
+        const points: Array<Point> = samples.map(({ distance, force }: IForceCurvePoint): Point => ({
+            x: distance,
+            y: force,
+        }));
+
+        if (hasPhysicalCurve && (points[0].x !== 0 || points[0].y !== 0)) {
+            points.unshift({ x: 0, y: 0 });
+        }
+        const lastPoint = points[points.length - 1];
+        if (
+            lastPoint !== undefined &&
+            lastPoint.x !== null &&
+            (driveLength > lastPoint.x || (hasPhysicalCurve && lastPoint.y !== 0))
+        ) {
+            points.push({ x: driveLength, y: 0 });
+        }
+
+        return points;
+    });
     readonly showPeakInTitle: Signal<boolean> = computed(
         (): boolean => this.displayConfig().forceCurve.showPeakForceInTitle,
     );
@@ -112,17 +162,18 @@ export class ForceCurveTileComponent {
 
     readonly forceChartOptions: Signal<ChartOptions<"line">> = computed((): ChartOptions<"line"> => {
         const shouldShowPeakInTitle = this.showPeakInTitle();
-        const handleForcesData = this.handleForces();
+        const handleForcesData = this.forceCurve().map(({ force }: IForceCurvePoint): number => force);
         const shouldShowGridLines = this.showGridLines();
         const shouldShowAxisLabels = this.showAxisLabels();
-        const tileLabel = this.label();
+        const tileLabel = this.languageService.t(this.label());
         const side = this.strokeSide();
         const sideLabel = side !== undefined ? ` (${side})` : "";
 
         if (
             this._forceChartOptions.plugins?.legend?.title === undefined ||
             this._forceChartOptions.plugins?.datalabels === undefined ||
-            this._forceChartOptions.scales?.y === undefined
+            this._forceChartOptions.scales?.y === undefined ||
+            this._forceChartOptions.scales?.x === undefined
         ) {
             return { ...this._forceChartOptions };
         }
@@ -135,7 +186,16 @@ export class ForceCurveTileComponent {
         };
         this._forceChartOptions.scales.y.ticks = {
             display: shouldShowAxisLabels,
-                    color: "#49647f",
+            color: "#49647f",
+        };
+        this._forceChartOptions.scales.x.grid = { display: shouldShowGridLines };
+        this._forceChartOptions.scales.x.border = {
+            display: shouldShowAxisLabels || shouldShowGridLines,
+        };
+        this._forceChartOptions.scales.x.ticks = {
+            display: shouldShowAxisLabels,
+            color: "#49647f",
+            callback: (value: string | number): string => `${Math.round(Number(value) * 100)} cm`,
         };
 
         if (handleForcesData.length === 0) {
@@ -147,7 +207,7 @@ export class ForceCurveTileComponent {
         }
 
         this._forceChartOptions.plugins.legend.title.display = shouldShowPeakInTitle;
-        this._forceChartOptions.plugins.legend.title.text = `Peak: ${Math.round(Math.max(...handleForcesData))}N${sideLabel}`;
+        this._forceChartOptions.plugins.legend.title.text = `${this.languageService.t("Peak")}: ${Math.round(Math.max(...handleForcesData))}N${sideLabel}`;
         this._forceChartOptions.plugins.datalabels.display = shouldShowPeakInTitle
             ? false
             : (ctx: Context): boolean =>
@@ -160,16 +220,13 @@ export class ForceCurveTileComponent {
 
     readonly handleForcesChart: Signal<ChartConfiguration<"line">["data"]> = computed(
         (): ChartConfiguration<"line">["data"] => {
-            this._handleForcesChart.datasets[0].data = this.handleForces().map(
-                (currentForce: number, index: number): Point => ({
-                    y: currentForce,
-                    x: index,
-                }),
-            );
+            this._handleForcesChart.datasets[0].data = this.curvePoints();
 
             return { ...this._handleForcesChart };
         },
     );
+
+    private readonly languageService: LanguageService = inject(LanguageService);
 
     private _forceChartOptions: ChartOptions<"line"> = {
         responsive: true,
@@ -179,7 +236,8 @@ export class ForceCurveTileComponent {
                 anchor: "center",
                 align: "top",
                 offset: -2,
-                formatter: (value: Point): string => `Peak: ${Math.round(value.y ?? 0)}`,
+                formatter: (value: Point): string =>
+                    `${this.languageService.t("Peak")}: ${Math.round(value.y ?? 0)}`,
                 display: (ctx: Context): boolean =>
                     Math.max(
                         ...(ctx.dataset.data as Array<Point>).map((point: Point): number => point.y ?? 0),
@@ -210,12 +268,15 @@ export class ForceCurveTileComponent {
         scales: {
             x: {
                 type: "linear",
-                display: false,
-                ticks: { stepSize: 1 },
+                display: true,
+                min: 0,
+                max: ForceCurveTileComponent.FORCE_CURVE_DISPLAY_MAX_DISTANCE_METERS,
+                ticks: { stepSize: 0.25 },
             },
             y: {
                 ticks: { color: "#49647f" },
                 grid: { color: "rgba(42, 117, 188, 0.12)" },
+                beginAtZero: true,
             },
         },
         animations: {

@@ -27,6 +27,7 @@ import { ErgConnectionService } from "../../common/services/ergometer/erg-connec
 import { MetricsService } from "../../common/services/metrics.service";
 import { SessionManagerService } from "../../common/services/session-manager.service";
 import { UtilsService } from "../../common/services/utils.service";
+import { EMPTY_TREND_HISTORY, TrendHistory, TrendMetricKey } from "../../common/trend.interfaces";
 
 import {
     DASHBOARD_TILE_DEFINITIONS,
@@ -42,15 +43,10 @@ import {
 } from "./dashboard-tile-definitions";
 import { DashboardTileDefinition, PlacedDashboardTile } from "./dashboard.interfaces";
 import { SettingsBarComponent } from "./settings-bar/settings-bar.component";
-import {
-    EMPTY_TREND_HISTORY,
-    TrendHistory,
-    TrendMetricKey,
-} from "../../common/trend.interfaces";
 
 type AverageableMetricKey = Exclude<
     keyof ICalculatedMetrics,
-    "distance" | "strokeCount" | "handleForces" | "totalWork" | "powerBalance"
+    "distance" | "strokeCount" | "handleForces" | "forceCurve" | "totalWork" | "powerBalance"
 >;
 
 const PERFORMANCE_METRIC_KEYS: ReadonlyArray<AverageableMetricKey> = [
@@ -229,7 +225,12 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
                             lastTimestamp: number;
                         },
                         current: ICalculatedMetrics,
-                    ) => DashboardComponent.updateTrendHistory(state, current),
+                    ): {
+                        history: TrendHistory;
+                        lastMetrics: ICalculatedMetrics | undefined;
+                        lastStrokeCount: number;
+                        lastTimestamp: number;
+                    } => DashboardComponent.updateTrendHistory(state, current),
                     {
                         history: EMPTY_TREND_HISTORY,
                         lastMetrics: undefined,
@@ -421,8 +422,8 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
                   };
         }
 
-        // Session metrics can emit several times while a stroke is being calculated.
-        // Sampling only when the stroke count changes keeps history independent of the display refresh rate.
+        // session metrics can emit several times while a stroke is being calculated.
+        // sampling only when the stroke count changes keeps history independent of the display refresh rate.
         if (current.strokeCount === state.lastStrokeCount) {
             return state;
         }
@@ -432,12 +433,14 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
         const elapsedSeconds =
             state.lastTimestamp === 0 ? 0 : Math.max((now - state.lastTimestamp) / 1000, 0.05);
         const currentDistanceMeters = current.distance / 100;
-        const previousDistanceMeters = previous?.distance === undefined ? currentDistanceMeters : previous.distance / 100;
-        const deltaSpeed = Math.max(0, currentDistanceMeters - previousDistanceMeters) / Math.max(elapsedSeconds, 0.05);
+        const previousDistanceMeters =
+            previous?.distance === undefined ? currentDistanceMeters : previous.distance / 100;
+        const deltaSpeed =
+            Math.max(0, currentDistanceMeters - previousDistanceMeters) / Math.max(elapsedSeconds, 0.05);
         const rowingSpeed = current.speed > 0 ? current.speed : deltaSpeed;
         const intervalRate = elapsedSeconds > 0 ? 60 / elapsedSeconds : current.strokeRate;
         const values: Partial<Record<TrendMetricKey, number>> = {
-            // Distance remains cumulative for the plotted line. The separate
+            // distance remains cumulative for the plotted line. The separate
             // distanceRate sample drives its color intensity, so a longer
             // session does not become darker merely because its total distance
             // is larger.

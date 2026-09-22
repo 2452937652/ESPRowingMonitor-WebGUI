@@ -52,11 +52,13 @@ import {
 import { versionInfo } from "../../../../common/data/version";
 import { ConfigManagerService } from "../../../../common/services/config-manager.service";
 import { FirmwareUpdateManagerService } from "../../../../common/services/ergometer/firmware-update-manager.service";
+import { AppLanguage, LanguageService } from "../../../../common/services/language.service";
 import { EnumToArrayPipe } from "../../../../common/utils/enum-to-array.pipe";
 import { getValidationErrors } from "../../../../common/utils/utility.functions";
 import { OtaDialogComponent } from "../../ota-settings-dialog/ota-dialog.component";
 
 type GeneralSettingsFormGroup = FormGroup<{
+    language: FormControl<AppLanguage>;
     bleMode: FormControl<BleServiceFlag>;
     logLevel: FormControl<LogLevel>;
     heartRateMonitor: FormControl<HeartRateMonitorMode>;
@@ -133,8 +135,10 @@ export class GeneralSettingsComponent implements OnInit {
         private dialog: MatDialog,
         private fb: NonNullableFormBuilder,
         private configManager: ConfigManagerService,
+        private languageService: LanguageService,
     ) {
         this.settingsForm = this.fb.group({
+            language: [this.languageService.language()],
             bleMode: [{ value: BleServiceFlag.CpsService, disabled: true }],
             logLevel: [{ value: LogLevel.Silent, disabled: true }, [Validators.min(0), Validators.max(6)]],
             heartRateMonitor: [
@@ -214,6 +218,8 @@ export class GeneralSettingsComponent implements OnInit {
             this.settingsForm.enable();
         }
 
+        // language is a WebGUI-only preference and is available without BLE.
+        this.settingsForm.controls.language.enable();
         this.settingsForm.controls.heartRateMonitor.enable();
 
         if (rowerSettings.generalSettings.logDeltaTimes === undefined) {

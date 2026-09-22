@@ -6,6 +6,7 @@ import {
     filter,
     map,
     Observable,
+    of,
     pairwise,
     shareReplay,
     startWith,
@@ -16,6 +17,7 @@ import {
     IBaseMetrics,
     IErgConnectionStatus,
     IExtendedMetrics,
+    IForceCurve,
     IHeartRate,
     IHRConnectionStatus,
     IRawCalculatedMetrics,
@@ -44,6 +46,35 @@ export class MetricsService {
     private readonly handleForces$: Observable<Array<number>> = this.ergMetricService
         .streamHandleForces$()
         .pipe(startWith([] as Array<number>), shareReplay({ bufferSize: 1, refCount: true }));
+
+    private readonly forceCurve$: Observable<IForceCurve | undefined> = ((): Observable<
+        IForceCurve | undefined
+    > => {
+        const streamHandleForceCurve = this.ergMetricService.streamHandleForceCurve$;
+        if (typeof streamHandleForceCurve !== "function") {
+            return of(undefined);
+        }
+
+        return streamHandleForceCurve.call(this.ergMetricService).pipe(startWith(undefined));
+    })().pipe(shareReplay({ bufferSize: 1, refCount: true }));
+
+    private readonly forceValues$: Observable<Array<number>> = combineLatest([
+        this.measurement$,
+        this.handleForces$,
+        this.forceCurve$,
+    ]).pipe(
+        map(
+            ([measurement, handleForces, forceCurve]: [
+                IBaseMetrics,
+                Array<number>,
+                IForceCurve | undefined,
+            ]): Array<number> =>
+                forceCurve?.strokeId === measurement.strokeCount
+                    ? forceCurve.samples.map(({ force }: { force: number }): number => force)
+                    : handleForces,
+        ),
+        shareReplay({ bufferSize: 1, refCount: true }),
+    );
 
     constructor(
         private ergMetricService: ErgMetricsService,
@@ -76,6 +107,29 @@ export class MetricsService {
         }
 
         return (((2 * Math.PI * sprocketRadius) / impulsePerRevolution) * handleForcesLength) / cmInM;
+    }
+
+    private buildLegacyForceCurve(handleForces: Array<number>, strokeId: number): IForceCurve {
+        const {
+            sprocketRadius,
+            impulsePerRevolution,
+        }: { sprocketRadius: number; impulsePerRevolution: number } =
+            this.ergSettingsService.rowerSettings().rowingSettings.machineSettings;
+        const sampleDistance =
+            impulsePerRevolution === 0 ? 0 : (2 * Math.PI * sprocketRadius) / impulsePerRevolution / cmInM;
+
+        return {
+            strokeId,
+            driveLength: this.calculateDriveLength(handleForces.length),
+            driveDuration: 0,
+            samples: handleForces.map(
+                (force: number, index: number): { distance: number; elapsedTime: number; force: number } => ({
+                    distance: sampleDistance * index,
+                    elapsedTime: 0,
+                    force,
+                }),
+            ),
+        };
     }
 
     private calculateSpeed(baseMetricsPrevious: IBaseMetrics, baseMetricsCurrent: IBaseMetrics): number {
@@ -150,19 +204,33 @@ export class MetricsService {
         return combineLatest([
             this.measurement$.pipe(pairwise()),
             this.streamExtended$(),
-            this.handleForces$,
+            this.forceValues$,
+            this.forceCurve$,
         ]).pipe(
             withLatestFrom(this.streamPowerBalance$()),
             map(
                 ([metricsInput, powerBalance]: [
-                    [[IBaseMetrics, IBaseMetrics], IExtendedMetrics, Array<number>],
+                    [[IBaseMetrics, IBaseMetrics], IExtendedMetrics, Array<number>, IForceCurve | undefined],
                     number,
                 ]): IRawCalculatedMetrics => {
-                    const [[baseMetricsPrevious, baseMetricsCurrent], extendedMetrics, handleForces]: [
+                    const [
+                        [baseMetricsPrevious, baseMetricsCurrent],
+                        extendedMetrics,
+                        handleForces,
+                        physicalCurve,
+                    ]: [
                         [IBaseMetrics, IBaseMetrics],
                         IExtendedMetrics,
                         Array<number>,
+                        IForceCurve | undefined,
                     ] = metricsInput;
+                    const currentPhysicalCurve =
+                        physicalCurve?.strokeId === baseMetricsCurrent.strokeCount
+                            ? physicalCurve
+                            : undefined;
+                    const forceCurve =
+                        currentPhysicalCurve ??
+                        this.buildLegacyForceCurve(handleForces, baseMetricsCurrent.strokeCount);
                     const { peakForce, peakForceIndex }: { peakForce: number; peakForceIndex: number } =
                         handleForces.reduce(
                             (
@@ -186,11 +254,18 @@ export class MetricsService {
                         handleForces,
                         peakForce,
                         peakForcePositionNorm:
-                            handleForces.length > 1 ? (peakForceIndex / (handleForces.length - 1)) * 100 : 0,
+                            currentPhysicalCurve !== undefined && forceCurve.driveLength > 0
+                                ? ((forceCurve.samples[peakForceIndex]?.distance ?? 0) /
+                                      forceCurve.driveLength) *
+                                  100
+                                : handleForces.length > 1
+                                  ? (peakForceIndex / (handleForces.length - 1)) * 100
+                                  : 0,
                         strokeRate: this.calculateStrokeRate(baseMetricsPrevious, baseMetricsCurrent),
                         speed: this.calculateSpeed(baseMetricsPrevious, baseMetricsCurrent),
                         distPerStroke: this.calculateStrokeDistance(baseMetricsPrevious, baseMetricsCurrent),
-                        driveLength: this.calculateDriveLength(handleForces.length),
+                        driveLength: forceCurve.driveLength,
+                        forceCurve: forceCurve.samples,
                         powerBalance,
                     };
                 },
@@ -211,7 +286,7 @@ export class MetricsService {
      * Starts at 0.5 (perfectly balanced) before the first complete pair arrives.
      */
     private streamPowerBalance$(): Observable<number> {
-        return combineLatest([this.measurement$, this.handleForces$]).pipe(
+        return combineLatest([this.measurement$, this.forceValues$]).pipe(
             distinctUntilChanged(
                 (
                     [previousMeasurement]: [IBaseMetrics, Array<number>],

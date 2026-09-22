@@ -10,6 +10,7 @@ import { IErgConnectionStatus } from "../common/common.interfaces";
 import { ErgConnectionService } from "../common/services/ergometer/erg-connection.service";
 import { ErgGenericDataService } from "../common/services/ergometer/erg-generic-data.service";
 import { FirmwareUpdateManagerService } from "../common/services/ergometer/firmware-update-manager.service";
+import { LanguageService } from "../common/services/language.service";
 import { SnackBarConfirmComponent } from "../common/snack-bar-confirm/snack-bar-confirm.component";
 
 @Component({
@@ -28,6 +29,7 @@ export class AppComponent implements AfterViewInit {
         private ergConnectionService: ErgConnectionService,
         private ergGenericDataService: ErgGenericDataService,
         private firmwareUpdateManager: FirmwareUpdateManagerService,
+        private languageService: LanguageService,
     ) {
         this.matIconReg.setDefaultFontSetClass("material-symbols-sharp");
 
@@ -68,6 +70,8 @@ export class AppComponent implements AfterViewInit {
     }
 
     async ngAfterViewInit(): Promise<void> {
+        this.languageService.start(document.body);
+
         if (this.swUpdate.isEnabled) {
             try {
                 await this.swUpdate.checkForUpdate();

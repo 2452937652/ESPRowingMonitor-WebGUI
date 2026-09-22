@@ -1,6 +1,15 @@
 <div class="tab-content">
     <form [formGroup]="settingsForm" novalidate class="flex-col">
         <div class="general-container">
+            <label>Language:</label>
+            <mat-button-toggle-group
+                formControlName="language"
+                hideSingleSelectionIndicator
+                aria-label="Language"
+            >
+                <mat-button-toggle value="en">English</mat-button-toggle>
+                <mat-button-toggle value="zh-CN">简体中文</mat-button-toggle>
+            </mat-button-toggle-group>
             <label>BLE Mode:</label>
             <mat-button-toggle-group
                 formControlName="bleMode"

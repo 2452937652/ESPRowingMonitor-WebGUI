@@ -1,4 +1,4 @@
-import { IHeartRate } from "../../../common/common.interfaces";
+import { IForceCurvePoint, IHeartRate } from "../../../common/common.interfaces";
 
 export interface ISessionRecord {
     strokeIndex: number;
@@ -20,6 +20,7 @@ export interface ISessionStroke extends ISessionRecord {
     peakForcePositionNorm: number;
     driveLength: number;
     handleForces: Array<number>;
+    forceCurve?: Array<IForceCurvePoint>;
 }
 
 export interface ISessionMaximums {

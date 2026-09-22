@@ -129,15 +129,15 @@ describe("SessionStrokesComponent", (): void => {
             expect(chartData.datasets[1].label).toBe("Current");
         });
 
-        it("should place peak marker vertical line at max force index", (): void => {
+        it("should place peak marker vertical line at the physical peak distance", (): void => {
             const chartData = component.singleStrokeForceCurve();
             const peakDataset = chartData.datasets[1];
             const points = peakDataset.data as Array<{ x: number; y: number }>;
 
             expect(points).toHaveLength(3);
-            expect(points[0].x).toBe(2);
+            expect(points[0].x).toBeCloseTo(0.65);
             expect(points[0].y).toBe(0);
-            expect(points[1].x).toBe(2);
+            expect(points[1].x).toBeCloseTo(0.65);
             expect(points[1].y).toBe(350);
         });
 
@@ -227,12 +227,12 @@ describe("SessionStrokesComponent", (): void => {
             const continuousData = component.continuousForceCurve();
 
             expect(continuousData.strokeOffsets[0]).toBe(0);
-            expect(continuousData.strokeOffsets[1]).toBe(5);
-            expect(continuousData.strokeOffsets[2]).toBe(10);
+            expect(continuousData.strokeOffsets[1]).toBeCloseTo(1.3);
+            expect(continuousData.strokeOffsets[2]).toBeCloseTo(2.6);
         });
 
         it("should resolve full window bounds when dataset fits within viewport", (): void => {
-            // 10 strokes × 5 forces = 50 total samples; VIEWPORT_STROKE_COUNT=15 covers all
+            // 10 strokes × 1.3 m drive length; VIEWPORT_STROKE_COUNT=15 covers all.
             const continuousData = component.continuousForceCurve();
             const strokeIndex = 6;
             const halfWindow = Math.floor(15 / 2); // 7
@@ -240,10 +240,10 @@ describe("SessionStrokesComponent", (): void => {
             const endStroke = Math.min(9, strokeIndex + halfWindow); // min(9, 13) = 9
 
             const minX = continuousData.strokeOffsets[startStroke];
-            const maxX = continuousData.strokeOffsets[endStroke] + mockStrokes[endStroke].handleForces.length;
+            const maxX = continuousData.strokeOffsets[endStroke] + mockStrokes[endStroke].driveLength;
 
             expect(minX).toBe(0);
-            expect(maxX).toBe(50);
+            expect(maxX).toBeCloseTo(13);
         });
 
         it("should clamp window start when navigating near the beginning", (): void => {
@@ -254,10 +254,10 @@ describe("SessionStrokesComponent", (): void => {
             const endStroke = Math.min(9, strokeIndex + halfWindow); // min(9, 8) = 8
 
             const minX = continuousData.strokeOffsets[startStroke];
-            const maxX = continuousData.strokeOffsets[endStroke] + mockStrokes[endStroke].handleForces.length;
+            const maxX = continuousData.strokeOffsets[endStroke] + mockStrokes[endStroke].driveLength;
 
             expect(minX).toBe(0);
-            expect(maxX).toBe(45); // offset[8]=40, handleForces.length=5
+            expect(maxX).toBeCloseTo(11.7); // offset[8]=10.4, driveLength=1.3
         });
     });
 

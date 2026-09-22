@@ -15,7 +15,7 @@ import {
     timer,
 } from "rxjs";
 
-import { IBaseMetrics, IExtendedMetrics } from "../../common.interfaces";
+import { IBaseMetrics, IExtendedMetrics, IForceCurve } from "../../common.interfaces";
 import { observeValue$ } from "../ble.utilities";
 
 import { BaseMetrics } from "./base-metrics";
@@ -105,6 +105,36 @@ export class ErgMetricsService {
                         console.warn(`Handle characteristic error: ${error}; retrying: ${count}`);
 
                         this.ergConnectionService.connectToHandleForces(gatt);
+                    }
+
+                    return timer(2000);
+                },
+            }),
+        );
+    }
+
+    streamHandleForceCurve$(): Observable<IForceCurve> {
+        return this.ergConnectionService.handleForceCurveCharacteristic$.pipe(
+            filter(
+                (
+                    handleForceCurveCharacteristic: BluetoothRemoteGATTCharacteristic | undefined,
+                ): handleForceCurveCharacteristic is BluetoothRemoteGATTCharacteristic =>
+                    handleForceCurveCharacteristic !== undefined,
+            ),
+            switchMap(
+                (
+                    handleForceCurveCharacteristic: BluetoothRemoteGATTCharacteristic,
+                ): Observable<IForceCurve> => this.observeHandleForceCurve$(handleForceCurveCharacteristic),
+            ),
+            retry({
+                count: 4,
+                delay: (error: Error, count: number): Observable<0> => {
+                    const gatt =
+                        this.ergConnectionService.readHandleForceCurveCharacteristic()?.service.device.gatt;
+                    if (gatt && error.message.includes("unknown")) {
+                        console.warn(`Handle force curve characteristic error: ${error}; retrying: ${count}`);
+
+                        this.ergConnectionService.connectToHandleForceCurve(gatt);
                     }
 
                     return timer(2000);
@@ -207,6 +237,115 @@ export class ErgMetricsService {
             ),
             finalize((): void => {
                 this.ergConnectionService.resetHandleForceCharacteristic();
+            }),
+        );
+    }
+
+    private observeHandleForceCurve$(
+        handleForceCurveCharacteristic: BluetoothRemoteGATTCharacteristic,
+    ): Observable<IForceCurve> {
+        interface ForceCurvePacket {
+            version: number;
+            totalChunks: number;
+            chunkIndex: number;
+            strokeId: number;
+            totalSamples: number;
+            driveLength: number;
+            driveDuration: number;
+            samples: IForceCurve["samples"];
+        }
+
+        const packets$ = observeValue$(handleForceCurveCharacteristic).pipe(
+            map((value: DataView): ForceCurvePacket | undefined => {
+                const headerSize = 16;
+                const sampleSize = 12;
+                if (value.byteLength < headerSize || (value.byteLength - headerSize) % sampleSize !== 0) {
+                    return undefined;
+                }
+
+                const totalChunks = value.getUint8(1);
+                const chunkIndex = value.getUint8(2);
+                if (
+                    value.getUint8(0) !== 1 ||
+                    totalChunks === 0 ||
+                    chunkIndex === 0 ||
+                    chunkIndex > totalChunks
+                ) {
+                    return undefined;
+                }
+
+                const samples: IForceCurve["samples"] = [];
+                for (let offset = headerSize; offset < value.byteLength; offset += sampleSize) {
+                    samples.push({
+                        distance: value.getFloat32(offset, true),
+                        elapsedTime: value.getUint32(offset + 4, true) / 1e6,
+                        force: value.getFloat32(offset + 8, true),
+                    });
+                }
+
+                return {
+                    version: value.getUint8(0),
+                    totalChunks,
+                    chunkIndex,
+                    strokeId: value.getUint16(4, true),
+                    totalSamples: value.getUint16(6, true),
+                    driveLength: value.getFloat32(8, true),
+                    driveDuration: value.getUint32(12, true) / 1e6,
+                    samples,
+                };
+            }),
+            filter(
+                (packet: ForceCurvePacket | undefined): packet is ForceCurvePacket => packet !== undefined,
+            ),
+            share(),
+        );
+
+        return packets$.pipe(
+            buffer(
+                packets$.pipe(
+                    filter((packet: ForceCurvePacket): boolean => packet.chunkIndex === packet.totalChunks),
+                ),
+            ),
+            map((packets: Array<ForceCurvePacket>): IForceCurve | undefined => {
+                if (packets.length === 0) {
+                    return undefined;
+                }
+
+                const first = packets[0];
+                const sortedPackets = [...packets].sort(
+                    (left: ForceCurvePacket, right: ForceCurvePacket): number =>
+                        left.chunkIndex - right.chunkIndex,
+                );
+                if (
+                    sortedPackets.length !== first.totalChunks ||
+                    sortedPackets.some(
+                        (packet: ForceCurvePacket, index: number): boolean =>
+                            packet.version !== first.version ||
+                            packet.strokeId !== first.strokeId ||
+                            packet.totalChunks !== first.totalChunks ||
+                            packet.chunkIndex !== index + 1,
+                    )
+                ) {
+                    return undefined;
+                }
+
+                const samples = sortedPackets.flatMap(
+                    (packet: ForceCurvePacket): IForceCurve["samples"] => packet.samples,
+                );
+                if (samples.length !== first.totalSamples) {
+                    return undefined;
+                }
+
+                return {
+                    strokeId: first.strokeId,
+                    driveLength: first.driveLength,
+                    driveDuration: first.driveDuration,
+                    samples,
+                };
+            }),
+            filter((curve: IForceCurve | undefined): curve is IForceCurve => curve !== undefined),
+            finalize((): void => {
+                this.ergConnectionService.resetHandleForceCurveCharacteristic();
             }),
         );
     }

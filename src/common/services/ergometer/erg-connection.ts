@@ -8,6 +8,7 @@ export class ErgConnections {
     readonly deltaTimesCharacteristic$: Observable<BluetoothRemoteGATTCharacteristic | undefined>;
     readonly extendedCharacteristic$: Observable<BluetoothRemoteGATTCharacteristic | undefined>;
     readonly handleForceCharacteristic$: Observable<BluetoothRemoteGATTCharacteristic | undefined>;
+    readonly handleForceCurveCharacteristic$: Observable<BluetoothRemoteGATTCharacteristic | undefined>;
 
     readonly measurementCharacteristic$: Observable<BluetoothRemoteGATTCharacteristic | undefined>;
 
@@ -26,6 +27,8 @@ export class ErgConnections {
         new BehaviorSubject<BluetoothRemoteGATTCharacteristic | undefined>(undefined);
     protected handleForceCharacteristic: BehaviorSubject<BluetoothRemoteGATTCharacteristic | undefined> =
         new BehaviorSubject<BluetoothRemoteGATTCharacteristic | undefined>(undefined);
+    protected handleForceCurveCharacteristic: BehaviorSubject<BluetoothRemoteGATTCharacteristic | undefined> =
+        new BehaviorSubject<BluetoothRemoteGATTCharacteristic | undefined>(undefined);
 
     protected measurementCharacteristic: BehaviorSubject<BluetoothRemoteGATTCharacteristic | undefined> =
         new BehaviorSubject<BluetoothRemoteGATTCharacteristic | undefined>(undefined);
@@ -41,6 +44,7 @@ export class ErgConnections {
         this.deltaTimesCharacteristic$ = this.deltaTimesCharacteristic.asObservable();
         this.extendedCharacteristic$ = this.extendedCharacteristic.asObservable();
         this.handleForceCharacteristic$ = this.handleForceCharacteristic.asObservable();
+        this.handleForceCurveCharacteristic$ = this.handleForceCurveCharacteristic.asObservable();
         this.measurementCharacteristic$ = this.measurementCharacteristic.asObservable();
         this.settingsCharacteristic$ = this.settingsCharacteristic.asObservable();
         this.strokeSettingsCharacteristic$ = this.strokeSettingsCharacteristic.asObservable();
@@ -57,6 +61,9 @@ export class ErgConnections {
     }
     readHandleForceCharacteristic(): BluetoothRemoteGATTCharacteristic | undefined {
         return this.handleForceCharacteristic.value;
+    }
+    readHandleForceCurveCharacteristic(): BluetoothRemoteGATTCharacteristic | undefined {
+        return this.handleForceCurveCharacteristic.value;
     }
     readMeasurementCharacteristic(): BluetoothRemoteGATTCharacteristic | undefined {
         return this.measurementCharacteristic.value;
@@ -79,6 +86,9 @@ export class ErgConnections {
     }
     resetHandleForceCharacteristic(): void {
         return this.handleForceCharacteristic.next(undefined);
+    }
+    resetHandleForceCurveCharacteristic(): void {
+        return this.handleForceCurveCharacteristic.next(undefined);
     }
     resetMeasurementCharacteristic(): void {
         return this.measurementCharacteristic.next(undefined);

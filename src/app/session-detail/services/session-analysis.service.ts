@@ -1,5 +1,6 @@
 import { Injectable } from "@angular/core";
 
+import { IForceCurvePoint } from "../../../common/common.interfaces";
 import {
     IExportHandleForces,
     IExportRecord,
@@ -35,6 +36,16 @@ const findPeakForce = (forces: Array<number>): { peakForce: number; peakForceInd
             force > accumulator.peakForce ? { peakForce: force, peakForceIndex: index } : accumulator,
         { peakForce: 0, peakForceIndex: 0 },
     );
+
+const buildLegacyForceCurve = (forces: Array<number>, driveLength: number): Array<IForceCurvePoint> => {
+    const sampleDistance = forces.length > 1 && driveLength > 0 ? driveLength / (forces.length - 1) : 1;
+
+    return forces.map((force: number, index: number): IForceCurvePoint => ({
+        distance: sampleDistance * index,
+        elapsedTime: 0,
+        force,
+    }));
+};
 
 @Injectable({
     providedIn: "root",
@@ -121,6 +132,9 @@ export class SessionAnalysisService {
                         forces.length > 1 ? (peakForceIndex / (forces.length - 1)) * 100 : 0,
                     driveLength: handleForce?.driveLength ?? 0,
                     handleForces: forces,
+                    forceCurve:
+                        handleForce?.forceCurve ??
+                        buildLegacyForceCurve(forces, handleForce?.driveLength ?? 0),
                 };
             },
         );
@@ -219,6 +233,9 @@ export class SessionAnalysisService {
                 peakForcePositionNorm: forces.length > 1 ? (peakForceIndex / (forces.length - 1)) * 100 : 0,
                 driveLength: handleForcesMap[metric.strokeCount]?.driveLength ?? 0,
                 handleForces: forces,
+                forceCurve:
+                    handleForcesMap[metric.strokeCount]?.forceCurve ??
+                    buildLegacyForceCurve(forces, handleForcesMap[metric.strokeCount]?.driveLength ?? 0),
             };
         });
     }

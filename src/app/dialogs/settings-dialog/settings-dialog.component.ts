@@ -30,6 +30,7 @@ import { ConfigManagerService } from "../../../common/services/config-manager.se
 import { DataRecorderService } from "../../../common/services/data-recorder.service";
 import { ErgConnectionService } from "../../../common/services/ergometer/erg-connection.service";
 import { ErgSettingsService } from "../../../common/services/ergometer/erg-settings.service";
+import { LanguageService } from "../../../common/services/language.service";
 import { UtilsService } from "../../../common/services/utils.service";
 import { SnackBarConfirmComponent } from "../../../common/snack-bar-confirm/snack-bar-confirm.component";
 import { BulkUploadProgressDialogComponent } from "../bulk-upload-dialog/bulk-upload-progress-dialog.component";
@@ -115,6 +116,7 @@ export class SettingsDialogComponent {
         private snackBar: MatSnackBar,
         private dialog: MatDialog,
         private settingsExportService: SettingsExportService,
+        private languageService: LanguageService,
         @Inject(MAT_DIALOG_DATA)
         public data: {
             rowerSettings: IRowerSettings;
@@ -250,6 +252,10 @@ export class SettingsDialogComponent {
     private async saveGeneralSettings(): Promise<void> {
         const general = this.generalSettings();
         const settingsForm = general.getForm();
+
+        if (settingsForm.controls.language.dirty) {
+            this.languageService.setLanguage(settingsForm.controls.language.value);
+        }
 
         if (settingsForm.controls.logLevel.dirty) {
             await this.ergSettingsService.changeLogLevel(settingsForm.controls.logLevel.value);

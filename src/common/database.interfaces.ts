@@ -1,4 +1,4 @@
-import { ISessionData } from "./common.interfaces";
+import { IForceCurvePoint, ISessionData } from "./common.interfaces";
 
 export interface ISessionUploadEntity {
     sessionId: number;
@@ -11,6 +11,7 @@ export interface IMetricsEntity extends Omit<
     | "peakForcePositionNorm"
     | "handleForces"
     | "driveLength"
+    | "forceCurve"
     | "totalWork"
     | "powerBalance"
     | "powerBalancePairCount"
@@ -25,6 +26,7 @@ export interface IHandleForcesEntity {
     strokeId: number;
     handleForces: Array<number>;
     driveLength: number;
+    forceCurve?: Array<IForceCurvePoint>;
 }
 
 export interface IDeltaTimesEntity {
@@ -54,6 +56,7 @@ export type IExportRecord = Omit<
     | "peakForcePositionNorm"
     | "handleForces"
     | "driveLength"
+    | "forceCurve"
     | "powerBalance"
     | "powerBalancePairCount"
 > & {
@@ -65,6 +68,7 @@ export interface IExportHandleForces {
     peakForcePositionNorm: number;
     driveLength: number;
     handleForces: Array<number>;
+    forceCurve?: Array<IForceCurvePoint>;
 }
 
 export type ILapExport = Omit<ILapEntity, "sessionId">;

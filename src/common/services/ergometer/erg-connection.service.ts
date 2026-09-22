@@ -12,6 +12,7 @@ import {
     EXTENDED_CHARACTERISTIC,
     EXTENDED_METRICS_SERVICE,
     FITNESS_MACHINE_SERVICE,
+    HANDLE_FORCE_CURVE_CHARACTERISTIC,
     HANDLE_FORCES_CHARACTERISTIC,
     OTA_SERVICE,
     SETTINGS_CHARACTERISTIC,
@@ -126,6 +127,36 @@ export class ErgConnectionService extends ErgConnections {
         }
     }
 
+    /**
+     * Connect to the distance-aware V2 curve when available.  This is an
+     * optional characteristic so the WebGUI can still work with older
+     * firmware through the legacy force-array characteristic.
+     */
+    async connectToHandleForceCurve(
+        gatt: BluetoothRemoteGATTServer,
+    ): Promise<void | BluetoothRemoteGATTCharacteristic> {
+        try {
+            this.handleForceCurveCharacteristic.next(
+                await connectToCharacteristic(
+                    gatt,
+                    EXTENDED_METRICS_SERVICE,
+                    HANDLE_FORCE_CURVE_CHARACTERISTIC,
+                ),
+            );
+
+            return this.handleForceCurveCharacteristic.value;
+        } catch (error) {
+            if (this._bluetoothDevice?.gatt?.connected) {
+                // missing V2 is expected when connecting to older firmware.
+                console.info("Distance-aware force curve is unavailable; using legacy force data:", error);
+
+                return;
+            }
+
+            throw error;
+        }
+    }
+
     async connectToMeasurement(
         gatt: BluetoothRemoteGATTServer,
     ): Promise<void | BluetoothRemoteGATTCharacteristic> {
@@ -213,6 +244,7 @@ export class ErgConnectionService extends ErgConnections {
         this.strokeSettingsCharacteristic.next(undefined);
         this.extendedCharacteristic.next(undefined);
         this.handleForceCharacteristic.next(undefined);
+        this.handleForceCurveCharacteristic.next(undefined);
         this.measurementCharacteristic.next(undefined);
         this.connectionStatusSubject.next({ status: "disconnected" });
     }
@@ -312,7 +344,10 @@ export class ErgConnectionService extends ErgConnections {
 
             await this.connectToMeasurement(gatt);
             await this.connectToExtended(gatt);
-            await this.connectToHandleForces(gatt);
+            const handleForceCurveCharacteristic = await this.connectToHandleForceCurve(gatt);
+            if (handleForceCurveCharacteristic === undefined) {
+                await this.connectToHandleForces(gatt);
+            }
             await this.connectToDeltaTimes(gatt);
             await this.connectToSettings(gatt);
             await this.connectToStrokeSettings(gatt);

@@ -195,6 +195,20 @@ export interface IExtendedMetrics {
     dragFactor: number;
 }
 
+/** A force sample with the physical drive coordinates supplied by BLE V2. */
+export interface IForceCurvePoint {
+    distance: number;
+    elapsedTime: number;
+    force: number;
+}
+
+export interface IForceCurve {
+    strokeId: number;
+    driveLength: number;
+    driveDuration: number;
+    samples: Array<IForceCurvePoint>;
+}
+
 export interface IBaseMetrics {
     revTime: number;
     distance: number;
@@ -210,6 +224,8 @@ export interface ICalculatedMetrics extends Omit<IExtendedMetrics & IBaseMetrics
     distPerStroke: number;
     driveLength: number;
     handleForces: Array<number>;
+    /** Optional so sessions recorded by older WebGUI versions remain readable. */
+    forceCurve?: Array<IForceCurvePoint>;
     totalWork: number;
     powerBalance: number;
 }
