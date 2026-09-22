@@ -122,6 +122,9 @@ export class ForceCurveTileComponent {
             force,
         }));
     });
+    readonly hasDistance: Signal<boolean> = computed(
+        (): boolean => (this.rowingData().forceCurve?.length ?? 0) > 0 || this.rowingData().driveLength > 0,
+    );
     readonly curvePoints: Signal<Array<Point>> = computed((): Array<Point> => {
         const samples = this.forceCurve();
         if (samples.length === 0) {
@@ -192,10 +195,24 @@ export class ForceCurveTileComponent {
         this._forceChartOptions.scales.x.border = {
             display: shouldShowAxisLabels || shouldShowGridLines,
         };
+        const isPhysical = this.hasDistance();
+        const lastDistance = this.forceCurve().at(-1)?.distance ?? 0;
+        if (isPhysical) {
+            this.distanceAxisMax = Math.max(
+                this.distanceAxisMax,
+                Math.ceil(Math.max(this.rowingData().driveLength, lastDistance)),
+            );
+        }
+        this._forceChartOptions.scales.x.max = isPhysical ? this.distanceAxisMax : Math.max(1, lastDistance);
+        this._forceChartOptions.scales.x.title = {
+            display: shouldShowAxisLabels,
+            text: this.languageService.t(isPhysical ? "Drive Length" : "Sample Index"),
+        };
         this._forceChartOptions.scales.x.ticks = {
             display: shouldShowAxisLabels,
             color: "#49647f",
-            callback: (value: string | number): string => `${Math.round(Number(value) * 100)} cm`,
+            callback: (value: string | number): string =>
+                isPhysical ? `${Math.round(Number(value) * 100)} cm` : `${value}`,
         };
 
         if (handleForcesData.length === 0) {
@@ -225,6 +242,9 @@ export class ForceCurveTileComponent {
             return { ...this._handleForcesChart };
         },
     );
+
+    // hold the distance scale after long drives for consistent comparisons.
+    private distanceAxisMax: number = ForceCurveTileComponent.FORCE_CURVE_DISPLAY_MAX_DISTANCE_METERS;
 
     private readonly languageService: LanguageService = inject(LanguageService);
 

@@ -31,9 +31,14 @@ const HIGHLIGHT_COLOR = "#ff6b35";
 const PEAK_MARKER_COLOR = "#e53935";
 const FORCE_CURVE_DISPLAY_MAX_DISTANCE_METERS = 2;
 
+const hasStrokeDistance = (stroke: ISessionStroke): boolean =>
+    (stroke.forceCurve?.length ?? 0) > 0 || stroke.driveLength > 0;
+
 interface IContinuousForceCurveData {
     chartData: ChartData;
     strokeOffsets: Array<number>;
+    isPhysical: boolean;
+    strokeLengths: Array<number>;
 }
 
 const buildLegacyForceCurve: (stroke: ISessionStroke) => Array<IForceCurvePoint> = (
@@ -99,9 +104,12 @@ const buildSingleStrokeForceCurve = (
     const samples = getStrokeForceCurve(stroke);
     const forcePoints = buildStrokeForcePoints(stroke);
 
-    const peakIndex = Math.round((stroke.peakForcePositionNorm / 100) * Math.max(0, samples.length - 1));
-    const peakDistance =
-        samples[peakIndex]?.distance ?? (stroke.driveLength * stroke.peakForcePositionNorm) / 100;
+    const peakSample = samples.reduce<IForceCurvePoint | undefined>(
+        (peak: IForceCurvePoint | undefined, sample: IForceCurvePoint): IForceCurvePoint =>
+            peak === undefined || sample.force > peak.force ? sample : peak,
+        undefined,
+    );
+    const peakDistance = peakSample?.distance ?? 0;
 
     return {
         datasets: [
@@ -141,14 +149,24 @@ const buildSingleStrokeForceCurve = (
 const buildContinuousForceCurveData = (strokes: Array<ISessionStroke>): IContinuousForceCurveData => {
     const points: Array<Point> = [];
     const strokeOffsets: Array<number> = [];
+    const isPhysical = strokes.every(hasStrokeDistance);
+    const strokeLengths: Array<number> = [];
     let xOffset = 0;
 
     for (const stroke of strokes) {
         strokeOffsets.push(xOffset);
-        buildStrokeForcePoints(stroke).forEach((point: Point): void => {
+        const strokePoints = isPhysical
+            ? buildStrokeForcePoints(stroke)
+            : getStrokeForceCurve(stroke).map((sample: IForceCurvePoint, index: number): Point => ({
+                  x: index,
+                  y: sample.force,
+              }));
+        strokePoints.forEach((point: Point): void => {
             points.push({ x: xOffset + Number(point.x), y: point.y });
         });
-        xOffset += getStrokeCurveLength(stroke);
+        const length = isPhysical ? getStrokeCurveLength(stroke) : Math.max(1, strokePoints.length - 1);
+        strokeLengths.push(length);
+        xOffset += length;
     }
 
     return {
@@ -164,6 +182,8 @@ const buildContinuousForceCurveData = (strokes: Array<ISessionStroke>): IContinu
             ],
         },
         strokeOffsets,
+        isPhysical,
+        strokeLengths,
     };
 };
 
@@ -210,6 +230,13 @@ export class SessionStrokesComponent {
 
     readonly singleStrokeChartOptions: Signal<ChartOptions> = computed((): ChartOptions => {
         const maxForce = computeMaxForce(this.strokes());
+        const isPhysical = hasStrokeDistance(this.currentStroke());
+        const axisMax = isPhysical
+            ? Math.max(
+                  FORCE_CURVE_DISPLAY_MAX_DISTANCE_METERS,
+                  Math.ceil(Math.max(...this.strokes().filter(hasStrokeDistance).map(getStrokeCurveLength))),
+              )
+            : Math.max(1, this.currentStroke().handleForces.length - 1);
 
         return {
             elements: {
@@ -220,11 +247,16 @@ export class SessionStrokesComponent {
                     type: "linear",
                     display: true,
                     min: 0,
-                    max: FORCE_CURVE_DISPLAY_MAX_DISTANCE_METERS,
+                    max: axisMax,
+                    title: {
+                        display: true,
+                        text: this.languageService.t(isPhysical ? "Drive Length" : "Sample Index"),
+                    },
                     ticks: {
                         display: true,
                         stepSize: 0.25,
-                        callback: (value: string | number): string => `${Math.round(Number(value) * 100)} cm`,
+                        callback: (value: string | number): string =>
+                            isPhysical ? `${Math.round(Number(value) * 100)} cm` : `${value}`,
                     },
                 },
                 y: {
@@ -263,7 +295,13 @@ export class SessionStrokesComponent {
 
         const offset = forceCurveData.strokeOffsets[strokeIndex];
 
-        const highlightPoints = buildStrokeForcePoints(stroke).map((point: Point): Point => ({
+        const sourcePoints = forceCurveData.isPhysical
+            ? buildStrokeForcePoints(stroke)
+            : getStrokeForceCurve(stroke).map((sample: IForceCurvePoint, index: number): Point => ({
+                  x: index,
+                  y: sample.force,
+              }));
+        const highlightPoints = sourcePoints.map((point: Point): Point => ({
             x: offset + Number(point.x),
             y: point.y,
         }));
@@ -290,7 +328,7 @@ export class SessionStrokesComponent {
         const totalDistance =
             lastStrokeIndex >= 0
                 ? forceCurveData.strokeOffsets[lastStrokeIndex] +
-                  getStrokeCurveLength(this.strokes()[lastStrokeIndex])
+                  forceCurveData.strokeLengths[lastStrokeIndex]
                 : 0;
 
         return {
@@ -303,10 +341,17 @@ export class SessionStrokesComponent {
                     display: true,
                     min: 0,
                     max: Math.max(FORCE_CURVE_DISPLAY_MAX_DISTANCE_METERS, totalDistance),
+                    title: {
+                        display: true,
+                        text: this.languageService.t(
+                            forceCurveData.isPhysical ? "Drive Length" : "Sample Index",
+                        ),
+                    },
                     ticks: {
                         display: true,
                         stepSize: 0.25,
-                        callback: (value: string | number): string => `${Math.round(Number(value) * 100)} cm`,
+                        callback: (value: string | number): string =>
+                            forceCurveData.isPhysical ? `${Math.round(Number(value) * 100)} cm` : `${value}`,
                     },
                 },
                 y: {
@@ -383,7 +428,7 @@ export class SessionStrokesComponent {
 
         const minX = forceCurveData.strokeOffsets[startStroke];
         const endOffset = forceCurveData.strokeOffsets[endStroke];
-        const maxX = endOffset + getStrokeCurveLength(this.strokes()[endStroke]);
+        const maxX = endOffset + forceCurveData.strokeLengths[endStroke];
 
         afterNextRender(
             (): void => {

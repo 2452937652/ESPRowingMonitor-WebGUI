@@ -1,11 +1,11 @@
-import { effect, Injectable, signal, WritableSignal } from "@angular/core";
+import { effect, Injectable, OnDestroy, signal, WritableSignal } from "@angular/core";
 
 export type AppLanguage = "en" | "zh-CN";
 
 @Injectable({
     providedIn: "root",
 })
-export class LanguageService {
+export class LanguageService implements OnDestroy {
     private static readonly STORAGE_KEY: string = "esprm.gui.language";
 
     readonly language: WritableSignal<AppLanguage> = signal<AppLanguage>(this.readLanguage());
@@ -51,6 +51,7 @@ export class LanguageService {
         "Reset Layout": "重置布局",
         "Clear Layout": "清空布局",
         "Force Curve": "拉力曲线",
+        "Sample Index": "采样序号",
         "Show Peak Force in Title": "在标题中显示峰值拉力",
         "Show Grid Lines": "显示网格线",
         "Show Axis Labels": "显示坐标轴标签",
@@ -258,6 +259,11 @@ export class LanguageService {
         });
     }
 
+    ngOnDestroy(): void {
+        this.observer?.disconnect();
+        this.root = undefined;
+    }
+
     private readLanguage(): AppLanguage {
         try {
             const stored = localStorage.getItem(LanguageService.STORAGE_KEY);
@@ -305,7 +311,10 @@ export class LanguageService {
                             ? previous
                             : current;
                     this.originalText.set(textNode, original);
-                    textNode.data = this.translateValue(original, this.language());
+                    const translated = this.translateValue(original, this.language());
+                    if (current !== translated) {
+                        textNode.data = translated;
+                    }
                 }
                 textNode = textWalker.nextNode() as Text | null;
             }
@@ -327,7 +336,10 @@ export class LanguageService {
                             : current;
                     attributes.set(attribute, original);
                     this.originalAttributes.set(element, attributes);
-                    element.setAttribute(attribute, this.translateValue(original, this.language()));
+                    const translated = this.translateValue(original, this.language());
+                    if (current !== translated) {
+                        element.setAttribute(attribute, translated);
+                    }
                 }
             }
             this.lastAppliedLanguage = this.language();
@@ -337,7 +349,7 @@ export class LanguageService {
     }
 
     private shouldSkip(element: Element): boolean {
-        return ["SCRIPT", "STYLE", "PRE", "CODE"].includes(element.tagName);
+        return element.closest("script, style, pre, code") !== null;
     }
 
     private translateValue(value: string, language: AppLanguage): string {

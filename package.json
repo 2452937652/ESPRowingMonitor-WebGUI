@@ -15,6 +15,7 @@
         "watch": "ng build --watch --configuration development",
         "test": "npm run test:tools && ng test --watch=false",
         "test:tools": "vitest run tools/",
+        "test:force-curve": "node --test tools/regression/force-curve.regression.cjs",
         "generate-version": "npm run build:tools && node out-tsc/tools/auto-version.js",
         "fetch-profiles": "npm run build:tools && node out-tsc/tools/fetch-profiles.js"
     },
