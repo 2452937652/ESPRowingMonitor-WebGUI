@@ -26,10 +26,12 @@ import {
     AutoLapMode,
     Config,
     ICalculatedMetrics,
+    IDisplayForceCurve,
     IErgConnectionStatus,
     IHeartRate,
     IIntervalsIcuConfig,
     IRawCalculatedMetrics,
+    ISessionData,
     SessionState,
 } from "../common.interfaces";
 import { Stopwatch } from "../utils/stopwatch";
@@ -39,6 +41,7 @@ import { DataRecorderService } from "./data-recorder.service";
 import { ErgConnectionService } from "./ergometer/erg-connection.service";
 import { IntervalsIcuService } from "./intervals-icu.service";
 import { MetricsService } from "./metrics.service";
+import { IStrokeMetricUpdate } from "./stroke-metrics-assembler";
 
 const ZERO_RAW_METRICS: IRawCalculatedMetrics = {
     avgStrokePower: 0,
@@ -60,6 +63,29 @@ const ZERO_RAW_METRICS: IRawCalculatedMetrics = {
 interface SessionAccumulator {
     sessionMetrics: ICalculatedMetrics;
     previousRawMetrics: IRawCalculatedMetrics;
+    previousSourceEpoch: number;
+    activeSourceKey: string | undefined;
+    sourceRecords: Map<string, SessionStrokeRecord>;
+    displayForceCurve: IDisplayForceCurve | undefined;
+    update: SessionUpdate | undefined;
+}
+
+interface SessionStrokeRecord {
+    distance: number;
+    strokeCount: number;
+    work: number;
+    rawDistance: number;
+    metrics: ICalculatedMetrics;
+}
+
+interface SessionUpdate {
+    metrics: ICalculatedMetrics;
+    record?: ICalculatedMetrics;
+}
+
+interface FallbackMetricState {
+    epoch: number;
+    previous?: IRawCalculatedMetrics;
 }
 
 @Injectable({
@@ -69,6 +95,7 @@ export class SessionManagerService {
     readonly sessionState: Signal<SessionState>;
     readonly elapsedTime: Signal<number>;
     readonly sessionMetrics$: Observable<ICalculatedMetrics>;
+    private readonly sessionUpdates$: Observable<SessionUpdate>;
 
     private sessionState$: BehaviorSubject<SessionState> = new BehaviorSubject<SessionState>("stopped");
     private _elapsedTime: WritableSignal<number> = signal<number>(0);
@@ -126,7 +153,7 @@ export class SessionManagerService {
         this.sessionState = toSignal(this.sessionState$, { requireSync: true });
         this.elapsedTime = this._elapsedTime.asReadonly();
 
-        this.sessionMetrics$ = this.sessionState$.pipe(
+        this.sessionUpdates$ = this.sessionState$.pipe(
             // suppress paused→running so the existing scan accumulator survives resume
             distinctUntilChanged(
                 (prev: SessionState, curr: SessionState): boolean =>
@@ -137,31 +164,43 @@ export class SessionManagerService {
             map(([, seedRaw]: [SessionState, IRawCalculatedMetrics]): SessionAccumulator => ({
                 sessionMetrics: { ...seedRaw, distance: 0, strokeCount: 0, totalWork: 0 },
                 previousRawMetrics: seedRaw,
+                previousSourceEpoch: 0,
+                activeSourceKey: undefined,
+                sourceRecords: new Map<string, SessionStrokeRecord>(),
+                displayForceCurve: undefined,
+                update: undefined,
             })),
-            switchMap((seed: SessionAccumulator): Observable<ICalculatedMetrics> =>
-                this.metricsService.rawMetrics$.pipe(
+            switchMap((seed: SessionAccumulator): Observable<SessionUpdate> =>
+                this.streamStrokeMetricUpdates$().pipe(
                     filter(
                         (): boolean => this.sessionState() === "running" || this.sessionState() === "paused",
                     ),
                     scan(
-                        (acc: SessionAccumulator, curr: IRawCalculatedMetrics): SessionAccumulator =>
+                        (acc: SessionAccumulator, curr: IStrokeMetricUpdate): SessionAccumulator =>
                             this.sessionState() === "paused"
-                                ? { ...acc, previousRawMetrics: curr }
-                                : SessionManagerService.accumulateSessionMetrics(acc, curr),
+                                ? {
+                                      ...acc,
+                                      previousRawMetrics: curr.metrics,
+                                      previousSourceEpoch: curr.sourceEpoch,
+                                  }
+                                : SessionManagerService.applyStrokeMetricUpdate(acc, curr),
                         seed,
                     ),
                     filter((): boolean => this.sessionState() === "running"),
-                    map(({ sessionMetrics }: SessionAccumulator): ICalculatedMetrics => sessionMetrics),
-                    distinctUntilChanged(
-                        (previousMetrics: ICalculatedMetrics, currentMetrics: ICalculatedMetrics): boolean =>
-                            previousMetrics.distance === currentMetrics.distance &&
-                            previousMetrics.strokeCount === currentMetrics.strokeCount &&
-                            previousMetrics.speed === currentMetrics.speed,
+                    map(
+                        (accumulator: SessionAccumulator): SessionUpdate =>
+                            accumulator.update ?? { metrics: accumulator.sessionMetrics },
                     ),
-                    startWith(seed.sessionMetrics),
+                    startWith({ metrics: seed.sessionMetrics }),
                     takeUntil(this.indicateStop$),
                 ),
             ),
+            shareReplay({ bufferSize: 1, refCount: true }),
+        );
+
+        this.sessionMetrics$ = this.sessionUpdates$.pipe(
+            map((update: SessionUpdate): ICalculatedMetrics => update.metrics),
+            distinctUntilChanged(SessionManagerService.areSessionMetricsEqual),
             shareReplay({ bufferSize: 1, refCount: true }),
         );
 
@@ -281,13 +320,30 @@ export class SessionManagerService {
     }
 
     private setupRecording(): void {
+        this.sessionUpdates$
+            .pipe(
+                filter(
+                    (
+                        update: SessionUpdate,
+                    ): update is SessionUpdate & { record: ICalculatedMetrics } => update.record !== undefined,
+                ),
+                withLatestFrom(this.metricsService.heartRateData$),
+                filter((): boolean => this.sessionState() === "running"),
+                takeUntilDestroyed(),
+            )
+            .subscribe(([update, heartRate]: [SessionUpdate & { record: ICalculatedMetrics }, IHeartRate | undefined]): void => {
+                this.dataRecorder.addSessionData(
+                    this.toSessionData(update.record, this.stopwatch.elapsedSeconds(), heartRate),
+                );
+            });
+
         this.sessionMetrics$
             .pipe(
                 filter(
                     (metrics: ICalculatedMetrics): boolean => metrics.strokeCount > 0 || metrics.distance > 0,
                 ),
                 switchMap((metrics: ICalculatedMetrics): Observable<[ICalculatedMetrics, number]> =>
-                    combineLatest([of(metrics), interval(1000).pipe(startWith(0))]).pipe(
+                    combineLatest([of(metrics), interval(1000)]).pipe(
                         takeUntil(this.indicateStop$),
                     ),
                 ),
@@ -297,11 +353,9 @@ export class SessionManagerService {
                 takeUntilDestroyed(),
             )
             .subscribe(([metrics, heartRate]: [ICalculatedMetrics, IHeartRate | undefined]): void => {
-                this.dataRecorder.addSessionData({
-                    ...metrics,
-                    elapsedTime: this.stopwatch.elapsedSeconds(),
-                    heartRate,
-                });
+                this.dataRecorder.addSessionData(
+                    this.toSessionData(metrics, this.stopwatch.elapsedSeconds(), heartRate),
+                );
             });
     }
 
@@ -384,42 +438,282 @@ export class SessionManagerService {
             });
     }
 
-    private static accumulateSessionMetrics(
-        sessionMetrics: SessionAccumulator,
-        currentMetrics: IRawCalculatedMetrics,
-    ): SessionAccumulator {
-        const {
-            rawDistance: currentRawDistance,
-            rawStrokeCount: currentRawStrokeCount,
-            ...currentRest
-        }: IRawCalculatedMetrics = currentMetrics;
+    private streamStrokeMetricUpdates$(): Observable<IStrokeMetricUpdate> {
+        const updates = (this.metricsService as Partial<MetricsService>).strokeMetricUpdates$;
+        if (updates !== undefined) {
+            return updates;
+        }
 
-        // if device resets mid session treat the new data as overflown and that current is the full delta, hence set previous to 0
-        const prevDistance =
-            currentRawDistance < sessionMetrics.previousRawMetrics.rawDistance
+        // Existing test doubles and older integrations expose rawMetrics$ only.
+        // Preserve their semantics while the production service supplies the
+        // richer stroke-keyed event stream.
+        return this.metricsService.rawMetrics$.pipe(
+            scan<IRawCalculatedMetrics, FallbackMetricState>(
+                (
+                    state: FallbackMetricState,
+                    metrics: IRawCalculatedMetrics,
+                ): FallbackMetricState => ({
+                    epoch:
+                        state.previous !== undefined && metrics.rawStrokeCount < state.previous.rawStrokeCount
+                            ? state.epoch + 1
+                            : state.epoch,
+                    previous: metrics,
+                }),
+                { epoch: 0, previous: undefined },
+            ),
+            filter(
+                (state: FallbackMetricState): state is FallbackMetricState & { previous: IRawCalculatedMetrics } =>
+                    state.previous !== undefined,
+            ),
+            map(
+                (state: FallbackMetricState & { previous: IRawCalculatedMetrics }): IStrokeMetricUpdate => ({
+                    sourceEpoch: state.epoch,
+                    sourceStrokeId: state.previous.rawStrokeCount,
+                    isBaseMetric: true,
+                    isCurrentStroke: true,
+                    metrics: state.previous,
+                }),
+            ),
+        );
+    }
+
+    private toSessionData(
+        metrics: ICalculatedMetrics,
+        elapsedTime: number,
+        heartRate: IHeartRate | undefined,
+    ): ISessionData {
+        const {
+            rawDistance: _rawDistance,
+            rawStrokeCount: _rawStrokeCount,
+            displayForceCurve,
+            ...sessionMetrics
+        } = metrics as ICalculatedMetrics & Pick<IRawCalculatedMetrics, "rawDistance" | "rawStrokeCount">;
+
+        return { ...sessionMetrics, elapsedTime, heartRate };
+    }
+
+    private static applyStrokeMetricUpdate(
+        accumulator: SessionAccumulator,
+        sourceUpdate: IStrokeMetricUpdate,
+    ): SessionAccumulator {
+        const sourceKey = `${sourceUpdate.sourceEpoch}:${sourceUpdate.sourceStrokeId}`;
+        const existingRecord = accumulator.sourceRecords.get(sourceKey);
+
+        if (sourceUpdate.isBaseMetric && existingRecord === undefined) {
+            return SessionManagerService.addSessionStroke(accumulator, sourceUpdate, sourceKey);
+        }
+
+        if (existingRecord === undefined) {
+            // A supplement for data that predates this session is not a new
+            // session stroke and must not be accumulated into it.
+            return { ...accumulator, update: undefined };
+        }
+
+        return SessionManagerService.updateSessionStroke(accumulator, sourceUpdate, sourceKey, existingRecord);
+    }
+
+    private static addSessionStroke(
+        accumulator: SessionAccumulator,
+        sourceUpdate: IStrokeMetricUpdate,
+        sourceKey: string,
+    ): SessionAccumulator {
+        const currentMetrics = sourceUpdate.metrics;
+        const isSeedReplay =
+            accumulator.sourceRecords.size === 0 &&
+            sourceUpdate.sourceEpoch === accumulator.previousSourceEpoch &&
+            currentMetrics.rawStrokeCount === accumulator.previousRawMetrics.rawStrokeCount &&
+            currentMetrics.rawDistance === accumulator.previousRawMetrics.rawDistance;
+        if (isSeedReplay) {
+            // Starting a new session subscribes to replayed BLE streams. The
+            // first replay describes the pre-session baseline, not a stroke
+            // that belongs in the new recording.
+            return { ...accumulator, update: undefined };
+        }
+        if (currentMetrics.rawStrokeCount === 0 && currentMetrics.rawDistance === 0) {
+            return {
+                ...accumulator,
+                previousRawMetrics: currentMetrics,
+                previousSourceEpoch: sourceUpdate.sourceEpoch,
+                update: undefined,
+            };
+        }
+        const isSameEpoch = sourceUpdate.sourceEpoch === accumulator.previousSourceEpoch;
+        const previousRawMetrics = accumulator.previousRawMetrics;
+        const previousDistance =
+            !isSameEpoch || currentMetrics.rawDistance < previousRawMetrics.rawDistance
                 ? 0
-                : sessionMetrics.previousRawMetrics.rawDistance;
-        const prevStrokeCount =
-            currentRawStrokeCount < sessionMetrics.previousRawMetrics.rawStrokeCount
+                : previousRawMetrics.rawDistance;
+        const previousStrokeCount =
+            !isSameEpoch || currentMetrics.rawStrokeCount < previousRawMetrics.rawStrokeCount
                 ? 0
-                : sessionMetrics.previousRawMetrics.rawStrokeCount;
+                : previousRawMetrics.rawStrokeCount;
+        const distance =
+            accumulator.sessionMetrics.distance + Math.max(0, currentMetrics.rawDistance - previousDistance);
+        const strokeCount =
+            accumulator.sessionMetrics.strokeCount +
+            Math.max(0, currentMetrics.rawStrokeCount - previousStrokeCount);
+        const work = SessionManagerService.calculateStrokeWork(currentMetrics);
+        const totalWork = accumulator.sessionMetrics.totalWork + work;
+        const displayForceCurve =
+            SessionManagerService.toDisplayForceCurve(sourceUpdate) ?? accumulator.displayForceCurve;
+        const recordMetrics: ICalculatedMetrics = {
+            ...currentMetrics,
+            distance,
+            strokeCount,
+            totalWork,
+            displayForceCurve,
+        };
+        const sourceRecords = new Map(accumulator.sourceRecords);
+        sourceRecords.set(sourceKey, {
+            distance,
+            strokeCount,
+            work,
+            rawDistance: currentMetrics.rawDistance,
+            metrics: recordMetrics,
+        });
 
         return {
-            sessionMetrics: {
-                ...currentRest,
-                distance:
-                    sessionMetrics.sessionMetrics.distance + Math.max(0, currentRawDistance - prevDistance),
-                strokeCount:
-                    sessionMetrics.sessionMetrics.strokeCount +
-                    Math.max(0, currentRawStrokeCount - prevStrokeCount),
-                totalWork:
-                    sessionMetrics.sessionMetrics.totalWork +
-                    (currentRawStrokeCount > prevStrokeCount
-                        ? currentMetrics.avgStrokePower *
-                          (currentMetrics.driveDuration + currentMetrics.recoveryDuration)
-                        : 0),
-            },
+            ...accumulator,
+            sessionMetrics: recordMetrics,
             previousRawMetrics: currentMetrics,
+            previousSourceEpoch: sourceUpdate.sourceEpoch,
+            activeSourceKey: sourceKey,
+            sourceRecords,
+            displayForceCurve,
+            update: { metrics: recordMetrics, record: recordMetrics },
         };
+    }
+
+    private static updateSessionStroke(
+        accumulator: SessionAccumulator,
+        sourceUpdate: IStrokeMetricUpdate,
+        sourceKey: string,
+        existingRecord: SessionStrokeRecord,
+    ): SessionAccumulator {
+        const currentMetrics = sourceUpdate.metrics;
+        const newWork = SessionManagerService.calculateStrokeWork(currentMetrics);
+        const totalWork = accumulator.sessionMetrics.totalWork - existingRecord.work + newWork;
+        const distanceDelta =
+            sourceUpdate.isBaseMetric && sourceUpdate.isCurrentStroke
+                ? Math.max(0, currentMetrics.rawDistance - existingRecord.rawDistance)
+                : 0;
+        const distance = existingRecord.distance + distanceDelta;
+        const displayForceCurve =
+            SessionManagerService.toDisplayForceCurve(sourceUpdate) ?? accumulator.displayForceCurve;
+        const recordMetrics: ICalculatedMetrics = {
+            ...existingRecord.metrics,
+            ...currentMetrics,
+            distance,
+            strokeCount: existingRecord.strokeCount,
+            totalWork,
+            displayForceCurve,
+        };
+        if (SessionManagerService.areSessionMetricsEqual(existingRecord.metrics, recordMetrics)) {
+            return { ...accumulator, update: undefined };
+        }
+        const sourceRecords = new Map(accumulator.sourceRecords);
+        sourceRecords.set(sourceKey, {
+            distance,
+            strokeCount: existingRecord.strokeCount,
+            work: newWork,
+            rawDistance: sourceUpdate.isBaseMetric ? currentMetrics.rawDistance : existingRecord.rawDistance,
+            metrics: recordMetrics,
+        });
+        const isActiveSource = accumulator.activeSourceKey === sourceKey;
+        const sessionMetrics: ICalculatedMetrics = isActiveSource
+            ? recordMetrics
+            : {
+                  ...accumulator.sessionMetrics,
+                  totalWork,
+                  displayForceCurve,
+              };
+
+        return {
+            ...accumulator,
+            sessionMetrics,
+            previousRawMetrics:
+                sourceUpdate.isBaseMetric && sourceUpdate.isCurrentStroke
+                    ? currentMetrics
+                    : accumulator.previousRawMetrics,
+            previousSourceEpoch:
+                sourceUpdate.isBaseMetric && sourceUpdate.isCurrentStroke
+                    ? sourceUpdate.sourceEpoch
+                    : accumulator.previousSourceEpoch,
+            sourceRecords,
+            displayForceCurve,
+            update: { metrics: sessionMetrics, record: recordMetrics },
+        };
+    }
+
+    private static calculateStrokeWork(metrics: IRawCalculatedMetrics): number {
+        if (metrics.isExtendedMetricsPending === true) {
+            return 0;
+        }
+
+        return metrics.avgStrokePower * (metrics.driveDuration + metrics.recoveryDuration);
+    }
+
+    private static toDisplayForceCurve(sourceUpdate: IStrokeMetricUpdate): IDisplayForceCurve | undefined {
+        const { metrics } = sourceUpdate;
+        if (metrics.forceCurve === undefined || metrics.forceCurveStatus !== "complete") {
+            return undefined;
+        }
+
+        return {
+            strokeId: metrics.forceCurveStrokeId ?? sourceUpdate.sourceStrokeId,
+            driveLength: metrics.driveLength,
+            driveDuration: metrics.driveDuration,
+            samples: metrics.forceCurve,
+            isDriveLengthAnomalous: metrics.isDriveLengthAnomalous === true,
+        };
+    }
+
+    private static areSessionMetricsEqual(
+        previousMetrics: ICalculatedMetrics,
+        currentMetrics: ICalculatedMetrics,
+    ): boolean {
+        const {
+            avgStrokePower,
+            distance,
+            strokeCount,
+            totalWork,
+            driveDuration,
+            recoveryDuration,
+            dragFactor,
+            strokeRate,
+            speed,
+            distPerStroke,
+            driveLength,
+            peakForce,
+            peakForcePositionNorm,
+            powerBalance,
+            forceCurveStatus,
+            forceCurve,
+            displayForceCurve,
+            isDriveLengthAnomalous,
+            isExtendedMetricsPending,
+        } = previousMetrics;
+
+        return (
+            avgStrokePower === currentMetrics.avgStrokePower &&
+            distance === currentMetrics.distance &&
+            strokeCount === currentMetrics.strokeCount &&
+            totalWork === currentMetrics.totalWork &&
+            driveDuration === currentMetrics.driveDuration &&
+            recoveryDuration === currentMetrics.recoveryDuration &&
+            dragFactor === currentMetrics.dragFactor &&
+            strokeRate === currentMetrics.strokeRate &&
+            speed === currentMetrics.speed &&
+            distPerStroke === currentMetrics.distPerStroke &&
+            driveLength === currentMetrics.driveLength &&
+            peakForce === currentMetrics.peakForce &&
+            peakForcePositionNorm === currentMetrics.peakForcePositionNorm &&
+            powerBalance === currentMetrics.powerBalance &&
+            forceCurveStatus === currentMetrics.forceCurveStatus &&
+            forceCurve === currentMetrics.forceCurve &&
+            displayForceCurve === currentMetrics.displayForceCurve &&
+            isDriveLengthAnomalous === currentMetrics.isDriveLengthAnomalous &&
+            isExtendedMetricsPending === currentMetrics.isExtendedMetricsPending
+        );
     }
 }

@@ -193,6 +193,12 @@ export interface IExtendedMetrics {
     driveDuration: number;
     recoveryDuration: number;
     dragFactor: number;
+    /** Present in the backwards-compatible V2 extension; absent on legacy firmware. */
+    strokeId?: number;
+    /** V2 leaves recovery-derived values pending until the recovery phase ends. */
+    recoveryMetricsComplete?: boolean;
+    /** The legacy 16-bit duration prefix saturated; use V2's 32-bit values. */
+    legacyDurationClamped?: boolean;
 }
 
 /** A force sample with the physical drive coordinates supplied by BLE V2. */
@@ -205,8 +211,17 @@ export interface IForceCurvePoint {
 export interface IForceCurve {
     strokeId: number;
     driveLength: number;
+    /** Seconds. The BLE decoder converts the wire value from microseconds. */
     driveDuration: number;
     samples: Array<IForceCurvePoint>;
+}
+
+/** Whether a stroke's force curve is complete, pending on the V2 channel, or legacy data. */
+export type ForceCurveStatus = "complete" | "pending" | "legacy" | "unavailable";
+
+/** A completed curve retained for display while the next stroke is still pending. */
+export interface IDisplayForceCurve extends IForceCurve {
+    isDriveLengthAnomalous: boolean;
 }
 
 export interface IBaseMetrics {
@@ -226,6 +241,15 @@ export interface ICalculatedMetrics extends Omit<IExtendedMetrics & IBaseMetrics
     handleForces: Array<number>;
     /** Optional so sessions recorded by older WebGUI versions remain readable. */
     forceCurve?: Array<IForceCurvePoint>;
+    /** Device stroke that owns forceCurve; never infer ownership from the current display stroke. */
+    forceCurveStrokeId?: number;
+    forceCurveStatus?: ForceCurveStatus;
+    /** Preserves a completed prior curve only for the dashboard; it is never persisted for another stroke. */
+    displayForceCurve?: IDisplayForceCurve;
+    /** The original curve is preserved, but callers should avoid expanding a normal display scale for it. */
+    isDriveLengthAnomalous?: boolean;
+    /** V2 has delivered a drive but recovery-derived time/power is not ready yet. */
+    isExtendedMetricsPending?: boolean;
     totalWork: number;
     powerBalance: number;
 }

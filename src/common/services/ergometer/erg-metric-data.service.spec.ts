@@ -453,6 +453,43 @@ describe("ErgMetricsService", (): void => {
                 });
             });
 
+            it("should prefer stroke-keyed V2 microsecond durations and expose pending recovery metrics", async (): Promise<void> => {
+                const emittedValues: Array<IExtendedMetrics> = [];
+
+                service
+                    .streamExtended$()
+                    .pipe(takeUntil(destroySubject))
+                    .subscribe((value: IExtendedMetrics): void => {
+                        emittedValues.push(value);
+                    });
+
+                const buffer = new ArrayBuffer(20);
+                const value = new DataView(buffer);
+                value.setUint16(0, 220, true);
+                value.setUint16(2, 0xffff, true);
+                value.setUint16(4, 0xffff, true);
+                value.setUint16(6, 101, true);
+                value.setUint8(8, 2);
+                value.setUint8(9, 0x02); // recovery pending + legacy duration saturated
+                value.setUint16(10, 73, true);
+                value.setUint32(12, 62_000_000, true);
+                value.setUint32(16, 2_750_000, true);
+
+                (await extendedTrigger).triggerChanged(value);
+
+                expect(emittedValues).toEqual([
+                    {
+                        avgStrokePower: 220,
+                        driveDuration: 62_000_000,
+                        recoveryDuration: 2_750_000,
+                        dragFactor: 101,
+                        strokeId: 73,
+                        recoveryMetricsComplete: false,
+                        legacyDurationClamped: true,
+                    },
+                ]);
+            });
+
             it("should support backward compatibility with 7-byte packets (old format)", async (): Promise<void> => {
                 const emittedValues: Array<IExtendedMetrics> = [];
 

@@ -46,7 +46,17 @@ import { SettingsBarComponent } from "./settings-bar/settings-bar.component";
 
 type AverageableMetricKey = Exclude<
     keyof ICalculatedMetrics,
-    "distance" | "strokeCount" | "handleForces" | "forceCurve" | "totalWork" | "powerBalance"
+    | "distance"
+    | "strokeCount"
+    | "handleForces"
+    | "forceCurve"
+    | "forceCurveStrokeId"
+    | "forceCurveStatus"
+    | "displayForceCurve"
+    | "isDriveLengthAnomalous"
+    | "isExtendedMetricsPending"
+    | "totalWork"
+    | "powerBalance"
 >;
 
 const PERFORMANCE_METRIC_KEYS: ReadonlyArray<AverageableMetricKey> = [
@@ -164,8 +174,6 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
                                 ],
                             ),
                         ),
-                        trendHistory: this.trendHistory(),
-                        trendStyle: this.displayConfig().general.trendStyle ?? "bars",
                         label: entry.label,
                         ...(entry.icon !== undefined ? { icon: entry.icon } : {}),
                     })),
@@ -390,8 +398,11 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
             ...Object.fromEntries(
                 keys.map((key: AverageableMetricKey): [AverageableMetricKey, number] => [
                     key,
-                    buffer.reduce((sum: number, entry: ICalculatedMetrics): number => sum + entry[key], 0) /
-                        count,
+                    buffer.reduce((sum: number, entry: ICalculatedMetrics): number => {
+                        const value = entry[key];
+
+                        return sum + (typeof value === "number" ? value : 0);
+                    }, 0) / count,
                 ]),
             ),
         } as ICalculatedMetrics;
@@ -422,10 +433,37 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
                   };
         }
 
-        // session metrics can emit several times while a stroke is being calculated.
-        // sampling only when the stroke count changes keeps history independent of the display refresh rate.
+        // A completed stroke can receive its curve or extended metrics after
+        // the first record. Replace the last sample in that case; appending it
+        // would turn a single physical stroke into several trend points.
         if (current.strokeCount === state.lastStrokeCount) {
-            return state;
+            const history: Record<TrendMetricKey, ReadonlyArray<number>> = { ...state.history };
+            const values: Partial<Record<TrendMetricKey, number>> = {
+                distance: current.distance / 100,
+                distanceRate: current.speed,
+                pace: current.speed,
+                power: current.avgStrokePower,
+                strokeRate: current.strokeRate,
+                distPerStroke: current.distPerStroke,
+                dragFactor: current.dragFactor,
+                driveTime: current.driveDuration,
+                recoveryTime: current.recoveryDuration,
+                peakForce: current.peakForce,
+                peakForcePositionNorm: current.peakForcePositionNorm,
+                speed: current.speed,
+                driveLength: current.driveLength,
+                totalWork: current.totalWork,
+            };
+
+            for (const [key, value] of Object.entries(values) as Array<[TrendMetricKey, number | undefined]>) {
+                if (value === undefined || !Number.isFinite(value)) {
+                    continue;
+                }
+                const samples = history[key];
+                history[key] = samples.length === 0 ? [value] : [...samples.slice(0, -1), value];
+            }
+
+            return { ...state, history, lastMetrics: current };
         }
 
         const now = Date.now();

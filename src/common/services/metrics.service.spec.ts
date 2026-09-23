@@ -1,6 +1,6 @@
 import { signal, WritableSignal } from "@angular/core";
 import { TestBed } from "@angular/core/testing";
-import { BehaviorSubject, firstValueFrom, Subject } from "rxjs";
+import { BehaviorSubject, filter, firstValueFrom, Subject } from "rxjs";
 import { afterEach, beforeEach, describe, expect, it, Mock, vi } from "vitest";
 
 import {
@@ -187,28 +187,32 @@ describe("MetricsService", (): void => {
                 strokeCount: 0,
             };
 
+            const emitted: Array<IRawCalculatedMetrics> = [];
             service.rawMetrics$.subscribe((metrics: IRawCalculatedMetrics): void => {
-                // speed = (distance_diff / 100) / (time_diff / 1e6)
-                // expected: (1000 / 100) / ((2000000 - 1000000) / 1e6) = 10 / 1 = 10 m/s
-                expect(metrics.speed).toBe(10);
+                emitted.push(metrics);
             });
 
             measurementSubject.next(baseMetrics1);
             measurementSubject.next(baseMetrics2);
+
+            // The first base packet is a valid pending update; the second one
+            // carries the first observable speed delta.
+            expect(emitted.at(-1)?.speed).toBe(10);
         });
 
         it("should calculate stroke distance correctly", async (): Promise<void> => {
             const baseMetrics1: IBaseMetrics = { revTime: 0, distance: 1000, strokeTime: 0, strokeCount: 1 };
             const baseMetrics2: IBaseMetrics = { revTime: 0, distance: 2000, strokeTime: 0, strokeCount: 2 };
 
+            const emitted: Array<IRawCalculatedMetrics> = [];
             service.rawMetrics$.subscribe((metrics: IRawCalculatedMetrics): void => {
-                // distPerStroke = (distance_diff / 100) / stroke_diff
-                // expected: (1000 / 100) / 1 = 10 m/stroke
-                expect(metrics.distPerStroke).toBe(10);
+                emitted.push(metrics);
             });
 
             measurementSubject.next(baseMetrics1);
             measurementSubject.next(baseMetrics2);
+
+            expect(emitted.at(-1)?.distPerStroke).toBe(10);
         });
 
         it("should calculate stroke rate correctly", async (): Promise<void> => {
@@ -225,14 +229,15 @@ describe("MetricsService", (): void => {
                 strokeCount: 2,
             };
 
+            const emitted: Array<IRawCalculatedMetrics> = [];
             service.rawMetrics$.subscribe((metrics: IRawCalculatedMetrics): void => {
-                // strokeRate = (stroke_diff / (time_diff / 1e6)) * 60
-                // expected: (1 / ((2000000 - 1000000) / 1e6)) * 60 = (1 / 1) * 60 = 60 strokes/min
-                expect(metrics.strokeRate).toBe(60);
+                emitted.push(metrics);
             });
 
             measurementSubject.next(baseMetrics1);
             measurementSubject.next(baseMetrics2);
+
+            expect(emitted.at(-1)?.strokeRate).toBe(60);
         });
 
         it("should return 0 for calculations when values haven't changed", async (): Promise<void> => {
@@ -255,17 +260,13 @@ describe("MetricsService", (): void => {
         });
 
         it("should compute peakForce and peakForcePositionNorm for a typical force curve", async (): Promise<void> => {
-            const metricsPromise = firstValueFrom(service.rawMetrics$);
+            const metricsPromise = firstValueFrom(
+                service.rawMetrics$.pipe(filter((metrics: IRawCalculatedMetrics): boolean => metrics.handleForces.length === 3)),
+            );
 
             measurementSubject.next(mockBaseMetrics);
             extendedSubject.next(mockExtendedMetrics);
             handleForcesSubject.next([10, 50, 30]);
-            measurementSubject.next({
-                revTime: mockBaseMetrics.revTime + 1000,
-                distance: mockBaseMetrics.distance + 100,
-                strokeTime: mockBaseMetrics.strokeTime + 1000,
-                strokeCount: mockBaseMetrics.strokeCount + 1,
-            });
 
             const metrics = await metricsPromise;
 
@@ -275,17 +276,13 @@ describe("MetricsService", (): void => {
         });
 
         it("should return peakForcePositionNorm of 0 when peak is at start", async (): Promise<void> => {
-            const metricsPromise = firstValueFrom(service.rawMetrics$);
+            const metricsPromise = firstValueFrom(
+                service.rawMetrics$.pipe(filter((metrics: IRawCalculatedMetrics): boolean => metrics.handleForces.length === 3)),
+            );
 
             measurementSubject.next(mockBaseMetrics);
             extendedSubject.next(mockExtendedMetrics);
             handleForcesSubject.next([100, 50, 10]);
-            measurementSubject.next({
-                revTime: mockBaseMetrics.revTime + 1000,
-                distance: mockBaseMetrics.distance + 100,
-                strokeTime: mockBaseMetrics.strokeTime + 1000,
-                strokeCount: mockBaseMetrics.strokeCount + 1,
-            });
 
             const metrics = await metricsPromise;
 
@@ -295,17 +292,13 @@ describe("MetricsService", (): void => {
         });
 
         it("should return peakForcePositionNorm of 100 when peak is at end", async (): Promise<void> => {
-            const metricsPromise = firstValueFrom(service.rawMetrics$);
+            const metricsPromise = firstValueFrom(
+                service.rawMetrics$.pipe(filter((metrics: IRawCalculatedMetrics): boolean => metrics.handleForces.length === 3)),
+            );
 
             measurementSubject.next(mockBaseMetrics);
             extendedSubject.next(mockExtendedMetrics);
             handleForcesSubject.next([10, 50, 100]);
-            measurementSubject.next({
-                revTime: mockBaseMetrics.revTime + 1000,
-                distance: mockBaseMetrics.distance + 100,
-                strokeTime: mockBaseMetrics.strokeTime + 1000,
-                strokeCount: mockBaseMetrics.strokeCount + 1,
-            });
 
             const metrics = await metricsPromise;
 
@@ -315,17 +308,13 @@ describe("MetricsService", (): void => {
         });
 
         it("should return 0 for peakForcePositionNorm when handleForces has a single element", async (): Promise<void> => {
-            const metricsPromise = firstValueFrom(service.rawMetrics$);
+            const metricsPromise = firstValueFrom(
+                service.rawMetrics$.pipe(filter((metrics: IRawCalculatedMetrics): boolean => metrics.handleForces.length === 1)),
+            );
 
             measurementSubject.next(mockBaseMetrics);
             extendedSubject.next(mockExtendedMetrics);
             handleForcesSubject.next([42]);
-            measurementSubject.next({
-                revTime: mockBaseMetrics.revTime + 1000,
-                distance: mockBaseMetrics.distance + 100,
-                strokeTime: mockBaseMetrics.strokeTime + 1000,
-                strokeCount: mockBaseMetrics.strokeCount + 1,
-            });
 
             const metrics = await metricsPromise;
 
@@ -340,12 +329,6 @@ describe("MetricsService", (): void => {
             measurementSubject.next(mockBaseMetrics);
             extendedSubject.next(mockExtendedMetrics);
             handleForcesSubject.next([]);
-            measurementSubject.next({
-                revTime: mockBaseMetrics.revTime + 1000,
-                distance: mockBaseMetrics.distance + 100,
-                strokeTime: mockBaseMetrics.strokeTime + 1000,
-                strokeCount: mockBaseMetrics.strokeCount + 1,
-            });
 
             const metrics = await metricsPromise;
 
@@ -354,17 +337,13 @@ describe("MetricsService", (): void => {
         });
 
         it("should use the first occurrence when multiple elements are tied for peak", async (): Promise<void> => {
-            const metricsPromise = firstValueFrom(service.rawMetrics$);
+            const metricsPromise = firstValueFrom(
+                service.rawMetrics$.pipe(filter((metrics: IRawCalculatedMetrics): boolean => metrics.handleForces.length === 3)),
+            );
 
             measurementSubject.next(mockBaseMetrics);
             extendedSubject.next(mockExtendedMetrics);
             handleForcesSubject.next([50, 50, 50]);
-            measurementSubject.next({
-                revTime: mockBaseMetrics.revTime + 1000,
-                distance: mockBaseMetrics.distance + 100,
-                strokeTime: mockBaseMetrics.strokeTime + 1000,
-                strokeCount: mockBaseMetrics.strokeCount + 1,
-            });
 
             const metrics = await metricsPromise;
 
@@ -445,17 +424,13 @@ describe("MetricsService", (): void => {
                 }),
             );
 
-            const metricsPromise = firstValueFrom(service.rawMetrics$);
+            const metricsPromise = firstValueFrom(
+                service.rawMetrics$.pipe(filter((metrics: IRawCalculatedMetrics): boolean => metrics.handleForces.length === 5)),
+            );
 
             measurementSubject.next(mockBaseMetrics);
             extendedSubject.next(mockExtendedMetrics);
             handleForcesSubject.next([10, 20, 30, 40, 50]);
-            measurementSubject.next({
-                revTime: mockBaseMetrics.revTime + 1000,
-                distance: mockBaseMetrics.distance + 100,
-                strokeTime: mockBaseMetrics.strokeTime + 1000,
-                strokeCount: mockBaseMetrics.strokeCount + 1,
-            });
 
             const metrics = await metricsPromise;
 
@@ -594,26 +569,27 @@ describe("MetricsService", (): void => {
                 emitted.push(metrics);
             });
 
-            // seed the pairwise and emit a side-A stroke (odd strokeCount)
-            measurementSubject.next({ revTime: 0, distance: 0, strokeTime: 0, strokeCount: 0 });
-            handleForcesSubject.next([100]);
             measurementSubject.next({ revTime: 1000, distance: 100, strokeTime: 1000, strokeCount: 1 });
+            handleForcesSubject.next([100]);
 
-            expect(emitted).toHaveLength(1);
-            expect(emitted[0].powerBalance).toBe(0.5);
+            const completed = emitted.filter(
+                (metrics: IRawCalculatedMetrics): boolean => metrics.rawStrokeCount === 1 && metrics.handleForces.length > 0,
+            );
+            expect(completed).toHaveLength(1);
+            expect(completed[0].powerBalance).toBe(0.5);
         });
 
-        it("should emit rawMetrics$ exactly once per stroke", (): void => {
-            let emissionCount = 0;
-            service.rawMetrics$.subscribe((): void => {
-                emissionCount++;
+        it("should emit a supplemental update for an already-known current stroke", (): void => {
+            const emitted: Array<IRawCalculatedMetrics> = [];
+            service.rawMetrics$.subscribe((metrics: IRawCalculatedMetrics): void => {
+                emitted.push(metrics);
             });
 
-            measurementSubject.next({ revTime: 0, distance: 0, strokeTime: 0, strokeCount: 0 });
-            handleForcesSubject.next([100]);
             measurementSubject.next({ revTime: 1000, distance: 100, strokeTime: 1000, strokeCount: 1 });
+            handleForcesSubject.next([100]);
 
-            expect(emissionCount).toBe(1);
+            expect(emitted.filter((metrics: IRawCalculatedMetrics): boolean => metrics.rawStrokeCount === 1)).toHaveLength(2);
+            expect(emitted.at(-1)?.handleForces).toEqual([100]);
         });
 
         it("should compute powerBalance when consecutive odd+even strokes pair up", (): void => {
@@ -622,19 +598,16 @@ describe("MetricsService", (): void => {
                 emitted.push(metrics);
             });
 
-            // side A: stronger (120 N mean force)
-            handleForcesSubject.next([120, 120]);
-            measurementSubject.next({ revTime: 0, distance: 0, strokeTime: 0, strokeCount: 0 });
             measurementSubject.next({ revTime: 1000, distance: 100, strokeTime: 1000, strokeCount: 1 });
+            handleForcesSubject.next([120, 120]); // side A: stronger
 
-            // side B: weaker (80 N mean force)
-            handleForcesSubject.next([80, 80]);
             measurementSubject.next({ revTime: 2000, distance: 200, strokeTime: 2000, strokeCount: 2 });
+            handleForcesSubject.next([80, 80]); // side B: weaker
 
-            // first emission (stroke 1) still has the default balance.
-            expect(emitted[0].powerBalance).toBe(0.5);
-            const lastEmitted: IRawCalculatedMetrics = emitted[emitted.length - 1];
-            expect(lastEmitted.powerBalance).toBeCloseTo(120 / (120 + 80));
+            const completedStroke2 = emitted
+                .filter((metrics: IRawCalculatedMetrics): boolean => metrics.rawStrokeCount === 2 && metrics.handleForces.length > 0)
+                .at(-1);
+            expect(completedStroke2?.powerBalance).toBeCloseTo(120 / (120 + 80));
         });
 
         it("should retain the previous balance when force updates arrive mid-stroke (same strokeCount)", (): void => {
@@ -643,17 +616,16 @@ describe("MetricsService", (): void => {
                 emitted.push(metrics);
             });
 
-            handleForcesSubject.next([120, 120]); // side A forces
-            measurementSubject.next({ revTime: 0, distance: 0, strokeTime: 0, strokeCount: 0 });
             measurementSubject.next({ revTime: 1000, distance: 100, strokeTime: 1000, strokeCount: 1 });
-
-            handleForcesSubject.next([999, 999]);
-
-            handleForcesSubject.next([80, 80]); // side B forces
+            handleForcesSubject.next([120, 120]); // side A forces
+            handleForcesSubject.next([999, 999]); // ignored: unkeyed legacy duplicate
             measurementSubject.next({ revTime: 2000, distance: 200, strokeTime: 2000, strokeCount: 2 });
+            handleForcesSubject.next([80, 80]); // side B forces
 
-            const lastEmitted: IRawCalculatedMetrics = emitted[emitted.length - 1];
-            expect(lastEmitted.powerBalance).toBeCloseTo(120 / (120 + 80));
+            const completedStroke2 = emitted
+                .filter((metrics: IRawCalculatedMetrics): boolean => metrics.rawStrokeCount === 2 && metrics.handleForces.length > 0)
+                .at(-1);
+            expect(completedStroke2?.powerBalance).toBeCloseTo(120 / (120 + 80));
         });
 
         it("should retain the last balance when an even stroke is not consecutive with the preceding odd stroke", (): void => {
@@ -662,19 +634,16 @@ describe("MetricsService", (): void => {
                 emitted.push(metrics);
             });
 
-            // set forces once before pairwise fires — no updates between strokes
+            measurementSubject.next({ revTime: 1000, distance: 100, strokeTime: 1000, strokeCount: 1 });
             handleForcesSubject.next([100]);
 
-            // stroke 1 (odd, side A)
-            measurementSubject.next({ revTime: 0, distance: 0, strokeTime: 0, strokeCount: 0 });
-            measurementSubject.next({ revTime: 1000, distance: 100, strokeTime: 1000, strokeCount: 1 });
-
-            // strokeCount = 4 (even, not consecutive with 1) — no force update between strokes
             measurementSubject.next({ revTime: 2000, distance: 200, strokeTime: 2000, strokeCount: 4 });
+            handleForcesSubject.next([100]);
 
-            expect(emitted).toHaveLength(2);
-            expect(emitted[0].powerBalance).toBe(0.5);
-            expect(emitted[1].powerBalance).toBe(0.5);
+            const completedStroke4 = emitted
+                .filter((metrics: IRawCalculatedMetrics): boolean => metrics.rawStrokeCount === 4 && metrics.handleForces.length > 0)
+                .at(-1);
+            expect(completedStroke4?.powerBalance).toBe(0.5);
         });
 
         it("should return 0.5 balance when both sides have zero force", (): void => {
@@ -683,14 +652,12 @@ describe("MetricsService", (): void => {
                 emitted.push(metrics);
             });
 
-            measurementSubject.next({ revTime: 0, distance: 0, strokeTime: 0, strokeCount: 0 });
-            handleForcesSubject.next([0]);
             measurementSubject.next({ revTime: 1000, distance: 100, strokeTime: 1000, strokeCount: 1 });
-
             handleForcesSubject.next([0]);
             measurementSubject.next({ revTime: 2000, distance: 200, strokeTime: 2000, strokeCount: 2 });
+            handleForcesSubject.next([0]);
 
-            expect(emitted[1].powerBalance).toBe(0.5);
+            expect(emitted.at(-1)?.powerBalance).toBe(0.5);
         });
     });
 });

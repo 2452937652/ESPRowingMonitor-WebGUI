@@ -421,6 +421,78 @@ describe("ForceCurveTileComponent", (): void => {
     });
 
     describe("handleForcesChart computed signal", (): void => {
+        it("keeps the completed prior curve visible while the current V2 stroke is pending", async (): Promise<void> => {
+            fixture.componentRef.setInput("rowingData", {
+                ...mockInitialMetrics,
+                strokeCount: 2,
+                driveLength: 0,
+                handleForces: [],
+                forceCurveStatus: "pending",
+                displayForceCurve: {
+                    strokeId: 1,
+                    driveLength: 1.4,
+                    driveDuration: 1.2,
+                    isDriveLengthAnomalous: false,
+                    samples: [
+                        { distance: 0, elapsedTime: 0, force: 10 },
+                        { distance: 0.7, elapsedTime: 0.6, force: 90 },
+                        { distance: 1.4, elapsedTime: 1.2, force: 0 },
+                    ],
+                },
+            });
+            await fixture.whenStable();
+
+            const points = component.handleForcesChart().datasets[0].data as Array<Point>;
+            expect(points).toContainEqual({ x: 0.7, y: 90 });
+            expect(component.displayCurve()?.strokeId).toBe(1);
+        });
+
+        it("uses actual physical distance and resets a valid expanded axis for the next normal curve", async (): Promise<void> => {
+            fixture.componentRef.setInput("rowingData", {
+                ...mockInitialMetrics,
+                driveLength: 2.4,
+                forceCurveStatus: "complete",
+                forceCurve: [
+                    { distance: 0, elapsedTime: 0, force: 10 },
+                    { distance: 1.2, elapsedTime: 0.5, force: 100 },
+                    { distance: 2.4, elapsedTime: 1, force: 0 },
+                ],
+            });
+            await fixture.whenStable();
+            expect((component.forceChartOptions().scales?.x as { max: number }).max).toBe(3);
+
+            fixture.componentRef.setInput("rowingData", {
+                ...mockInitialMetrics,
+                driveLength: 1.4,
+                forceCurveStatus: "complete",
+                forceCurve: [
+                    { distance: 0, elapsedTime: 0, force: 10 },
+                    { distance: 1.4, elapsedTime: 1, force: 0 },
+                ],
+            });
+            await fixture.whenStable();
+            expect((component.forceChartOptions().scales?.x as { max: number }).max).toBe(2);
+        });
+
+        it("flags an anomalous raw curve without permanently expanding the normal display axis", async (): Promise<void> => {
+            fixture.componentRef.setInput("rowingData", {
+                ...mockInitialMetrics,
+                driveLength: 61.37,
+                isDriveLengthAnomalous: true,
+                forceCurveStatus: "complete",
+                forceCurve: [
+                    { distance: 0, elapsedTime: 0, force: 10 },
+                    { distance: 61.37, elapsedTime: 62, force: 0 },
+                ],
+            });
+            await fixture.whenStable();
+
+            const points = component.handleForcesChart().datasets[0].data as Array<Point>;
+            expect(points).toContainEqual({ x: 61.37, y: 0 });
+            expect((component.forceChartOptions().scales?.x as { max: number }).max).toBe(2);
+            expect(component.forceChartOptions().plugins?.legend?.title?.text).toContain("Anomalous drive: 6137 cm");
+        });
+
         it("should map force array to Point format with sequential x coordinates", async (): Promise<void> => {
             fixture.componentRef.setInput("rowingData", {
                 ...mockInitialMetrics,
@@ -484,8 +556,8 @@ describe("ForceCurveTileComponent", (): void => {
 
             expect(dataset.fill).toBe(true);
             expect(dataset.label).toBe("");
-            expect(dataset.borderColor).toBe("rgb(31,119,180)");
-            expect(dataset.backgroundColor).toBe("rgb(31,119,180,0.5)");
+            expect(dataset.borderColor).toBe("#1674d1");
+            expect(dataset.backgroundColor).toBe("rgba(87, 174, 235, 0.28)");
             expect(dataset.pointRadius).toBe(0);
         });
     });

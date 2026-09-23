@@ -132,6 +132,7 @@ export const createMockGeneralForm: (
     controlValues: Record<string, unknown> = {},
 ): IMockGeneralForm => {
     const defaultValues: Record<string, unknown> = {
+        language: "en",
         logLevel: 1,
         deltaTimeLogging: false,
         logToSdCard: false,

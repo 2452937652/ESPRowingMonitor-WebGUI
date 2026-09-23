@@ -26,7 +26,12 @@ import {
 import ChartDataLabels, { Context } from "chartjs-plugin-datalabels";
 import { BaseChartDirective, provideCharts } from "ng2-charts";
 
-import { ICalculatedMetrics, IDisplayConfig, IForceCurvePoint } from "../../../common/common.interfaces";
+import {
+    ICalculatedMetrics,
+    IDisplayConfig,
+    IDisplayForceCurve,
+    IForceCurvePoint,
+} from "../../../common/common.interfaces";
 import { LanguageService } from "../../../common/services/language.service";
 import { isKayakErgometer } from "../../../common/utils/utility.functions";
 
@@ -93,21 +98,52 @@ export class ForceCurveTileComponent {
     readonly displayConfig: InputSignal<IDisplayConfig> = input.required<IDisplayConfig>();
     readonly deviceName: InputSignal<string | undefined> = input<string | undefined>();
 
+    /**
+     * During the next drive the session layer retains the last completed V2
+     * curve here. It is display-only metadata: recording still uses the
+     * current stroke's own samples.
+     */
+    readonly displayCurve: Signal<IDisplayForceCurve | undefined> = computed(
+        (): IDisplayForceCurve | undefined => {
+            const data = this.rowingData();
+            if (data.displayForceCurve !== undefined) {
+                return data.displayForceCurve;
+            }
+            if (
+                data.forceCurve === undefined ||
+                (data.forceCurveStatus !== undefined && data.forceCurveStatus !== "complete")
+            ) {
+                return undefined;
+            }
+
+            return {
+                strokeId: data.forceCurveStrokeId ?? data.strokeCount,
+                driveLength: data.driveLength,
+                driveDuration: data.driveDuration,
+                samples: data.forceCurve,
+                isDriveLengthAnomalous: data.isDriveLengthAnomalous === true,
+            };
+        },
+    );
+
     readonly strokeSide: Signal<"A" | "B" | undefined> = computed((): "A" | "B" | undefined =>
         isKayakErgometer(this.deviceName())
-            ? this.rowingData().strokeCount % 2 === 1
+            ? (this.displayCurve()?.strokeId ?? this.rowingData().strokeCount) % 2 === 1
                 ? "A"
                 : "B"
             : undefined,
     );
 
     readonly handleForces: Signal<Array<number>> = computed(
-        (): Array<number> => this.rowingData().handleForces,
+        (): Array<number> =>
+            this.displayCurve()?.samples.map(({ force }: IForceCurvePoint): number => force) ??
+            this.rowingData().handleForces,
     );
     readonly forceCurve: Signal<Array<IForceCurvePoint>> = computed((): Array<IForceCurvePoint> => {
         const data = this.rowingData();
-        if (data.forceCurve !== undefined && data.forceCurve.length > 0) {
-            return data.forceCurve;
+        const displayCurve = this.displayCurve();
+        if (displayCurve !== undefined && displayCurve.samples.length > 0) {
+            return displayCurve.samples;
         }
 
         const driveLength = data.driveLength;
@@ -123,7 +159,7 @@ export class ForceCurveTileComponent {
         }));
     });
     readonly hasDistance: Signal<boolean> = computed(
-        (): boolean => (this.rowingData().forceCurve?.length ?? 0) > 0 || this.rowingData().driveLength > 0,
+        (): boolean => this.displayCurve() !== undefined || this.rowingData().driveLength > 0,
     );
     readonly curvePoints: Signal<Array<Point>> = computed((): Array<Point> => {
         const samples = this.forceCurve();
@@ -132,8 +168,12 @@ export class ForceCurveTileComponent {
         }
 
         const data = this.rowingData();
-        const hasPhysicalCurve = data.forceCurve !== undefined && data.forceCurve.length > 0;
-        const driveLength = Math.max(data.driveLength, samples[samples.length - 1].distance);
+        const displayCurve = this.displayCurve();
+        const hasPhysicalCurve = displayCurve !== undefined;
+        const driveLength = Math.max(
+            displayCurve?.driveLength ?? data.driveLength,
+            samples[samples.length - 1].distance,
+        );
         const points: Array<Point> = samples.map(({ distance, force }: IForceCurvePoint): Point => ({
             x: distance,
             y: force,
@@ -171,6 +211,13 @@ export class ForceCurveTileComponent {
         const tileLabel = this.languageService.t(this.label());
         const side = this.strokeSide();
         const sideLabel = side !== undefined ? ` (${side})` : "";
+        const displayCurve = this.displayCurve();
+        const reportedDriveLength = displayCurve?.driveLength ?? this.rowingData().driveLength;
+        const isDriveLengthAnomalous =
+            displayCurve?.isDriveLengthAnomalous ?? this.rowingData().isDriveLengthAnomalous === true;
+        const anomalyLabel = isDriveLengthAnomalous
+            ? ` · ${this.languageService.t("Anomalous drive")}: ${Math.round(reportedDriveLength * 100)} cm`
+            : "";
 
         if (
             this._forceChartOptions.plugins?.legend?.title === undefined ||
@@ -197,13 +244,17 @@ export class ForceCurveTileComponent {
         };
         const isPhysical = this.hasDistance();
         const lastDistance = this.forceCurve().at(-1)?.distance ?? 0;
-        if (isPhysical) {
-            this.distanceAxisMax = Math.max(
-                this.distanceAxisMax,
-                Math.ceil(Math.max(this.rowingData().driveLength, lastDistance)),
-            );
-        }
-        this._forceChartOptions.scales.x.max = isPhysical ? this.distanceAxisMax : Math.max(1, lastDistance);
+        // A valid long drive expands only this render's scale. An anomalous
+        // record remains available in the exported raw data but cannot poison
+        // subsequent normal curves with a permanent 62 m axis.
+        this._forceChartOptions.scales.x.max = isPhysical
+            ? isDriveLengthAnomalous
+                ? ForceCurveTileComponent.FORCE_CURVE_DISPLAY_MAX_DISTANCE_METERS
+                : Math.max(
+                      ForceCurveTileComponent.FORCE_CURVE_DISPLAY_MAX_DISTANCE_METERS,
+                      Math.ceil(Math.max(reportedDriveLength, lastDistance)),
+                  )
+            : Math.max(1, lastDistance);
         this._forceChartOptions.scales.x.title = {
             display: shouldShowAxisLabels,
             text: this.languageService.t(isPhysical ? "Drive Length" : "Sample Index"),
@@ -217,14 +268,14 @@ export class ForceCurveTileComponent {
 
         if (handleForcesData.length === 0) {
             this._forceChartOptions.plugins.legend.title.display = true;
-            this._forceChartOptions.plugins.legend.title.text = `${tileLabel}${sideLabel}`;
+            this._forceChartOptions.plugins.legend.title.text = `${tileLabel}${sideLabel}${anomalyLabel}`;
             this._forceChartOptions.plugins.datalabels.display = false;
 
             return { ...this._forceChartOptions };
         }
 
         this._forceChartOptions.plugins.legend.title.display = shouldShowPeakInTitle;
-        this._forceChartOptions.plugins.legend.title.text = `${this.languageService.t("Peak")}: ${Math.round(Math.max(...handleForcesData))}N${sideLabel}`;
+        this._forceChartOptions.plugins.legend.title.text = `${this.languageService.t("Peak")}: ${Math.round(Math.max(...handleForcesData))}N${sideLabel}${anomalyLabel}`;
         this._forceChartOptions.plugins.datalabels.display = shouldShowPeakInTitle
             ? false
             : (ctx: Context): boolean =>
@@ -242,9 +293,6 @@ export class ForceCurveTileComponent {
             return { ...this._handleForcesChart };
         },
     );
-
-    // hold the distance scale after long drives for consistent comparisons.
-    private distanceAxisMax: number = ForceCurveTileComponent.FORCE_CURVE_DISPLAY_MAX_DISTANCE_METERS;
 
     private readonly languageService: LanguageService = inject(LanguageService);
 

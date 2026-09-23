@@ -10,8 +10,8 @@ import { MetricComponent } from "../metric/metric.component";
         <app-metric
             [title]="label()"
             [icon]="icon()"
-            [value]="rowingData().driveLength | roundNumber: 2"
-            unit="m"
+            [value]="rowingData().driveLength * 100 | roundNumber: 0"
+            unit="cm"
         ></app-metric>
     `,
     changeDetection: ChangeDetectionStrategy.OnPush,

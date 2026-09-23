@@ -93,7 +93,7 @@ const TILE_REGISTRY = {
         minRowSpan: 1,
         minColumnSpan: 1,
         component: DistanceTileComponent,
-        context: ["rowingData", "displayConfig"],
+        context: ["rowingData", "displayConfig", "trendHistory", "trendStyle"],
     },
     Pace: {
         id: "pace" as const,
@@ -104,7 +104,7 @@ const TILE_REGISTRY = {
         minRowSpan: 1,
         minColumnSpan: 1,
         component: PaceTileComponent,
-        context: ["rowingData"],
+        context: ["rowingData", "trendHistory", "trendStyle"],
     },
     Power: {
         id: "power" as const,
@@ -115,7 +115,7 @@ const TILE_REGISTRY = {
         minRowSpan: 1,
         minColumnSpan: 1,
         component: PowerTileComponent,
-        context: ["rowingData"],
+        context: ["rowingData", "trendHistory", "trendStyle"],
     },
     StrokeRate: {
         id: "strokeRate" as const,
@@ -126,7 +126,7 @@ const TILE_REGISTRY = {
         minRowSpan: 1,
         minColumnSpan: 1,
         component: StrokeRateTileComponent,
-        context: ["rowingData"],
+        context: ["rowingData", "trendHistory", "trendStyle"],
     },
     Timer: {
         id: "timer" as const,
@@ -137,7 +137,7 @@ const TILE_REGISTRY = {
         minRowSpan: 1,
         minColumnSpan: 1,
         component: TimerTileComponent,
-        context: ["elapseTime"],
+        context: ["elapseTime", "trendHistory", "trendStyle"],
     },
     ForceCurve: {
         id: "forceCurve" as const,
@@ -159,7 +159,7 @@ const TILE_REGISTRY = {
         minRowSpan: 1,
         minColumnSpan: 1,
         component: DistPerStrokeTileComponent,
-        context: ["rowingData", "displayConfig"],
+        context: ["rowingData", "displayConfig", "trendHistory", "trendStyle"],
     },
     TotalStrokes: {
         id: "totalStrokes" as const,
@@ -169,7 +169,7 @@ const TILE_REGISTRY = {
         minRowSpan: 1,
         minColumnSpan: 1,
         component: TotalStrokesTileComponent,
-        context: ["rowingData"],
+        context: ["rowingData", "trendHistory", "trendStyle"],
     },
     DragFactor: {
         id: "dragFactor" as const,
@@ -179,7 +179,7 @@ const TILE_REGISTRY = {
         minRowSpan: 1,
         minColumnSpan: 1,
         component: DragFactorTileComponent,
-        context: ["rowingData"],
+        context: ["rowingData", "trendHistory", "trendStyle"],
     },
     Drive: {
         id: "driveTime" as const,
@@ -189,7 +189,7 @@ const TILE_REGISTRY = {
         minRowSpan: 1,
         minColumnSpan: 1,
         component: DriveTileComponent,
-        context: ["rowingData"],
+        context: ["rowingData", "trendHistory", "trendStyle"],
     },
     DriveLength: {
         id: "driveLength" as const,
@@ -210,7 +210,7 @@ const TILE_REGISTRY = {
         minRowSpan: 1,
         minColumnSpan: 1,
         component: RecoveryTileComponent,
-        context: ["rowingData"],
+        context: ["rowingData", "trendHistory", "trendStyle"],
     },
     HeartRate: {
         id: "heartRate" as const,

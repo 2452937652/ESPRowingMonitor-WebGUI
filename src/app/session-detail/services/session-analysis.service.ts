@@ -47,6 +47,18 @@ const buildLegacyForceCurve = (forces: Array<number>, driveLength: number): Arra
     }));
 };
 
+const calculatePeakPosition = (
+    forceCurve: Array<IForceCurvePoint> | undefined,
+    driveLength: number,
+    peakForceIndex: number,
+    forceCount: number,
+): number =>
+    forceCurve !== undefined && driveLength > 0
+        ? ((forceCurve[peakForceIndex]?.distance ?? 0) / driveLength) * 100
+        : forceCount > 1
+          ? (peakForceIndex / (forceCount - 1)) * 100
+          : 0;
+
 @Injectable({
     providedIn: "root",
 })
@@ -114,8 +126,11 @@ export class SessionAnalysisService {
         for (const record of records) {
             uniqueRecords.set(record.strokeIndex, record);
         }
+        const canonicalRecords = Array.from(uniqueRecords.values()).sort(
+            (a, b): number => a.timeStamp - b.timeStamp,
+        );
 
-        const strokes: Array<ISessionStroke> = Array.from(uniqueRecords.values()).map(
+        const strokes: Array<ISessionStroke> = canonicalRecords.map(
             (record: ISessionRecord): ISessionStroke => {
                 const handleForce: IExportHandleForces | undefined =
                     exportSession.handleForces[record.strokeIndex];
@@ -124,17 +139,22 @@ export class SessionAnalysisService {
                     peakForce: computedPeakForce,
                     peakForceIndex,
                 }: { peakForce: number; peakForceIndex: number } = findPeakForce(forces);
+                const driveLength = handleForce?.driveLength ?? 0;
+                const forceCurve =
+                    handleForce?.forceCurve ?? buildLegacyForceCurve(forces, driveLength);
 
                 return {
                     ...record,
                     peakForce: computedPeakForce,
-                    peakForcePositionNorm:
-                        forces.length > 1 ? (peakForceIndex / (forces.length - 1)) * 100 : 0,
-                    driveLength: handleForce?.driveLength ?? 0,
+                    peakForcePositionNorm: calculatePeakPosition(
+                        handleForce?.forceCurve,
+                        driveLength,
+                        peakForceIndex,
+                        forces.length,
+                    ),
+                    driveLength,
                     handleForces: forces,
-                    forceCurve:
-                        handleForce?.forceCurve ??
-                        buildLegacyForceCurve(forces, handleForce?.driveLength ?? 0),
+                    forceCurve,
                 };
             },
         );
@@ -146,7 +166,7 @@ export class SessionAnalysisService {
         return {
             sessionId,
             deviceName: exportSession.deviceName,
-            records,
+            records: canonicalRecords,
             strokes,
             statistics,
             laps: exportedLaps.length > 0 ? buildLapsFromMarkers(strokes, exportedLaps) : detectLaps(strokes),
@@ -186,7 +206,14 @@ export class SessionAnalysisService {
     }
 
     private buildRecords(metricsEntities: Array<IMetricsEntity>): Array<ISessionRecord> {
-        return metricsEntities.map((metric: IMetricsEntity): ISessionRecord => ({
+        const newestByStroke = new Map<number, IMetricsEntity>();
+        for (const metric of metricsEntities) {
+            newestByStroke.set(metric.strokeCount, metric);
+        }
+
+        return Array.from(newestByStroke.values())
+            .sort((a, b): number => a.timeStamp - b.timeStamp)
+            .map((metric: IMetricsEntity): ISessionRecord => ({
             strokeIndex: metric.strokeCount,
             timeStamp: metric.timeStamp,
             elapsedTime: metric.elapsedTime,
@@ -199,7 +226,7 @@ export class SessionAnalysisService {
             recoveryDuration: metric.recoveryDuration,
             dragFactor: metric.dragFactor,
             heartRate: metric.heartRate,
-        }));
+            }));
     }
 
     private buildStrokes(
@@ -212,9 +239,12 @@ export class SessionAnalysisService {
         }
 
         return Array.from(uniqueByStrokeCount.values()).map((metric: IMetricsEntity): ISessionStroke => {
-            const forces: Array<number> = handleForcesMap[metric.strokeCount]?.handleForces ?? [];
+            const handleForce = handleForcesMap[metric.strokeCount];
+            const forces: Array<number> = handleForce?.handleForces ?? [];
             const { peakForce, peakForceIndex }: { peakForce: number; peakForceIndex: number } =
                 findPeakForce(forces);
+            const driveLength = handleForce?.driveLength ?? 0;
+            const forceCurve = handleForce?.forceCurve ?? buildLegacyForceCurve(forces, driveLength);
 
             return {
                 strokeIndex: metric.strokeCount,
@@ -230,12 +260,15 @@ export class SessionAnalysisService {
                 dragFactor: metric.dragFactor,
                 heartRate: metric.heartRate,
                 peakForce,
-                peakForcePositionNorm: forces.length > 1 ? (peakForceIndex / (forces.length - 1)) * 100 : 0,
-                driveLength: handleForcesMap[metric.strokeCount]?.driveLength ?? 0,
+                peakForcePositionNorm: calculatePeakPosition(
+                    handleForce?.forceCurve,
+                    driveLength,
+                    peakForceIndex,
+                    forces.length,
+                ),
+                driveLength,
                 handleForces: forces,
-                forceCurve:
-                    handleForcesMap[metric.strokeCount]?.forceCurve ??
-                    buildLegacyForceCurve(forces, handleForcesMap[metric.strokeCount]?.driveLength ?? 0),
+                forceCurve,
             };
         });
     }

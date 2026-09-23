@@ -1,16 +1,17 @@
 import { DestroyRef, Injectable } from "@angular/core";
 import { takeUntilDestroyed } from "@angular/core/rxjs-interop";
 import {
-    combineLatest,
+    defer,
     distinctUntilChanged,
     filter,
     map,
+    merge,
     Observable,
     of,
     pairwise,
+    scan,
     shareReplay,
     startWith,
-    withLatestFrom,
 } from "rxjs";
 
 import {
@@ -28,14 +29,38 @@ import { ErgConnectionService } from "./ergometer/erg-connection.service";
 import { ErgMetricsService } from "./ergometer/erg-metric-data.service";
 import { ErgSettingsService } from "./ergometer/erg-settings.service";
 import { HeartRateService } from "./heart-rate/heart-rate.service";
+import {
+    IStrokeMetricUpdate,
+    StrokeMetricsAssembler,
+} from "./stroke-metrics-assembler";
 
 const cmInM = 100;
+
+type StrokeMetricInput =
+    | { type: "base"; value: IBaseMetrics }
+    | { type: "extended"; value: IExtendedMetrics }
+    | { type: "legacyForces"; value: Array<number> }
+    | { type: "physicalCurve"; value: IForceCurve }
+    | { type: "physicalCurveSupport"; value: boolean }
+    | { type: "reset" };
+
+interface AssemblyState {
+    assembler: StrokeMetricsAssembler;
+    update: IStrokeMetricUpdate | undefined;
+}
+
+interface PowerBalanceState {
+    balance: number;
+    completedForces: Map<string, Array<number>>;
+    update?: IStrokeMetricUpdate;
+}
 
 @Injectable({
     providedIn: "root",
 })
 export class MetricsService {
     readonly rawMetrics$: Observable<IRawCalculatedMetrics>;
+    readonly strokeMetricUpdates$: Observable<IStrokeMetricUpdate>;
     readonly heartRateData$: Observable<IHeartRate | undefined>;
     readonly hrConnectionStatus$: Observable<IHRConnectionStatus>;
 
@@ -47,34 +72,23 @@ export class MetricsService {
         .streamHandleForces$()
         .pipe(startWith([] as Array<number>), shareReplay({ bufferSize: 1, refCount: true }));
 
-    private readonly forceCurve$: Observable<IForceCurve | undefined> = ((): Observable<
-        IForceCurve | undefined
-    > => {
+    private readonly forceCurve$: Observable<IForceCurve> = ((): Observable<IForceCurve> => {
         const streamHandleForceCurve = this.ergMetricService.streamHandleForceCurve$;
         if (typeof streamHandleForceCurve !== "function") {
-            return of(undefined);
+            return of();
         }
 
-        return streamHandleForceCurve.call(this.ergMetricService).pipe(startWith(undefined));
+        return streamHandleForceCurve.call(this.ergMetricService);
     })().pipe(shareReplay({ bufferSize: 1, refCount: true }));
 
-    private readonly forceValues$: Observable<Array<number>> = combineLatest([
-        this.measurement$,
-        this.handleForces$,
-        this.forceCurve$,
-    ]).pipe(
-        map(
-            ([measurement, handleForces, forceCurve]: [
-                IBaseMetrics,
-                Array<number>,
-                IForceCurve | undefined,
-            ]): Array<number> =>
-                forceCurve?.strokeId === measurement.strokeCount
-                    ? forceCurve.samples.map(({ force }: { force: number }): number => force)
-                    : handleForces,
-        ),
-        shareReplay({ bufferSize: 1, refCount: true }),
-    );
+    private readonly forceCurveSupported$: Observable<boolean> = ((): Observable<boolean> => {
+        const streamForceCurveSupport = this.ergMetricService.streamHandleForceCurveSupport$;
+        if (typeof streamForceCurveSupport !== "function") {
+            return of(false);
+        }
+
+        return streamForceCurveSupport.call(this.ergMetricService).pipe(startWith(false));
+    })().pipe(distinctUntilChanged(), shareReplay({ bufferSize: 1, refCount: true }));
 
     constructor(
         private ergMetricService: ErgMetricsService,
@@ -84,7 +98,14 @@ export class MetricsService {
         private heartRateService: HeartRateService,
         private destroyRef: DestroyRef,
     ) {
-        this.rawMetrics$ = this.streamBasicMetrics$().pipe(shareReplay({ bufferSize: 1, refCount: true }));
+        this.strokeMetricUpdates$ = this.streamStrokeMetricUpdates$().pipe(
+            shareReplay({ bufferSize: 1, refCount: true }),
+        );
+        this.rawMetrics$ = this.strokeMetricUpdates$.pipe(
+            filter((update: IStrokeMetricUpdate): boolean => update.isCurrentStroke),
+            map((update: IStrokeMetricUpdate): IRawCalculatedMetrics => update.metrics),
+            shareReplay({ bufferSize: 1, refCount: true }),
+        );
         this.heartRateData$ = this.heartRateService.streamHeartRate$();
         this.hrConnectionStatus$ = this.heartRateService.connectionStatus$();
 
@@ -95,7 +116,7 @@ export class MetricsService {
         }
     }
 
-    private calculateDriveLength(handleForcesLength: number): number {
+    private calculateLegacyDriveLength(handleForcesLength: number): number {
         const {
             sprocketRadius,
             impulsePerRevolution,
@@ -107,76 +128,6 @@ export class MetricsService {
         }
 
         return (((2 * Math.PI * sprocketRadius) / impulsePerRevolution) * handleForcesLength) / cmInM;
-    }
-
-    private buildLegacyForceCurve(handleForces: Array<number>, strokeId: number): IForceCurve {
-        const {
-            sprocketRadius,
-            impulsePerRevolution,
-        }: { sprocketRadius: number; impulsePerRevolution: number } =
-            this.ergSettingsService.rowerSettings().rowingSettings.machineSettings;
-        const sampleDistance =
-            impulsePerRevolution === 0 ? 0 : (2 * Math.PI * sprocketRadius) / impulsePerRevolution / cmInM;
-
-        return {
-            strokeId,
-            driveLength: this.calculateDriveLength(handleForces.length),
-            driveDuration: 0,
-            samples: handleForces.map(
-                (force: number, index: number): { distance: number; elapsedTime: number; force: number } => ({
-                    distance: sampleDistance * index,
-                    elapsedTime: 0,
-                    force,
-                }),
-            ),
-        };
-    }
-
-    private calculateSpeed(baseMetricsPrevious: IBaseMetrics, baseMetricsCurrent: IBaseMetrics): number {
-        if (
-            baseMetricsCurrent.distance === baseMetricsPrevious.distance ||
-            baseMetricsCurrent.revTime === baseMetricsPrevious.revTime
-        ) {
-            return 0;
-        }
-
-        return (
-            (baseMetricsCurrent.distance - baseMetricsPrevious.distance) /
-            cmInM /
-            ((baseMetricsCurrent.revTime - baseMetricsPrevious.revTime) / 1e6)
-        );
-    }
-    private calculateStrokeDistance(
-        baseMetricsPrevious: IBaseMetrics,
-        baseMetricsCurrent: IBaseMetrics,
-    ): number {
-        if (
-            baseMetricsCurrent.distance === baseMetricsPrevious.distance ||
-            baseMetricsCurrent.strokeCount === baseMetricsPrevious.strokeCount
-        ) {
-            return 0;
-        }
-
-        return (
-            (baseMetricsCurrent.distance - baseMetricsPrevious.distance) /
-            cmInM /
-            (baseMetricsCurrent.strokeCount - baseMetricsPrevious.strokeCount)
-        );
-    }
-
-    private calculateStrokeRate(baseMetricsPrevious: IBaseMetrics, baseMetricsCurrent: IBaseMetrics): number {
-        if (
-            baseMetricsCurrent.strokeCount === baseMetricsPrevious.strokeCount ||
-            baseMetricsCurrent.strokeTime === baseMetricsPrevious.strokeTime
-        ) {
-            return 0;
-        }
-
-        return (
-            ((baseMetricsCurrent.strokeCount - baseMetricsPrevious.strokeCount) /
-                ((baseMetricsCurrent.strokeTime - baseMetricsPrevious.strokeTime) / 1e6)) *
-            60
-        );
     }
 
     private setupLogging(): void {
@@ -200,140 +151,120 @@ export class MetricsService {
             });
     }
 
-    private streamBasicMetrics$(): Observable<IRawCalculatedMetrics> {
-        return combineLatest([
-            this.measurement$.pipe(pairwise()),
-            this.streamExtended$(),
-            this.forceValues$,
-            this.forceCurve$,
-        ]).pipe(
-            withLatestFrom(this.streamPowerBalance$()),
-            map(
-                ([metricsInput, powerBalance]: [
-                    [[IBaseMetrics, IBaseMetrics], IExtendedMetrics, Array<number>, IForceCurve | undefined],
-                    number,
-                ]): IRawCalculatedMetrics => {
-                    const [
-                        [baseMetricsPrevious, baseMetricsCurrent],
-                        extendedMetrics,
-                        handleForces,
-                        physicalCurve,
-                    ]: [
-                        [IBaseMetrics, IBaseMetrics],
-                        IExtendedMetrics,
-                        Array<number>,
-                        IForceCurve | undefined,
-                    ] = metricsInput;
-                    const currentPhysicalCurve =
-                        physicalCurve?.strokeId === baseMetricsCurrent.strokeCount
-                            ? physicalCurve
-                            : undefined;
-                    const forceCurve =
-                        currentPhysicalCurve ??
-                        this.buildLegacyForceCurve(handleForces, baseMetricsCurrent.strokeCount);
-                    const { peakForce, peakForceIndex }: { peakForce: number; peakForceIndex: number } =
-                        handleForces.reduce(
-                            (
-                                accumulator: { peakForce: number; peakForceIndex: number },
-                                force: number,
-                                index: number,
-                            ): { peakForce: number; peakForceIndex: number } =>
-                                force > accumulator.peakForce
-                                    ? { peakForce: force, peakForceIndex: index }
-                                    : accumulator,
-                            { peakForce: 0, peakForceIndex: 0 },
-                        );
+    private streamStrokeMetricUpdates$(): Observable<IStrokeMetricUpdate> {
+        return defer((): Observable<IStrokeMetricUpdate> => {
+            const inputs$: Observable<StrokeMetricInput> = merge(
+                this.measurement$.pipe(
+                    map((value: IBaseMetrics): StrokeMetricInput => ({ type: "base", value })),
+                ),
+                this.ergMetricService.streamExtended$().pipe(
+                    map((value: IExtendedMetrics): StrokeMetricInput => ({ type: "extended", value })),
+                ),
+                this.handleForces$.pipe(
+                    map((value: Array<number>): StrokeMetricInput => ({ type: "legacyForces", value })),
+                ),
+                this.forceCurve$.pipe(
+                    map((value: IForceCurve): StrokeMetricInput => ({ type: "physicalCurve", value })),
+                ),
+                this.forceCurveSupported$.pipe(
+                    map((value: boolean): StrokeMetricInput => ({ type: "physicalCurveSupport", value })),
+                ),
+                this.ergConnectionService.connectionStatus$().pipe(
+                    pairwise(),
+                    filter(
+                        ([previous, current]: [IErgConnectionStatus, IErgConnectionStatus]): boolean =>
+                            previous.status !== "disconnected" && current.status === "disconnected",
+                    ),
+                    map((): StrokeMetricInput => ({ type: "reset" })),
+                ),
+            );
 
-                    return {
-                        avgStrokePower: extendedMetrics.avgStrokePower,
-                        driveDuration: extendedMetrics.driveDuration / 1e6,
-                        recoveryDuration: extendedMetrics.recoveryDuration / 1e6,
-                        dragFactor: extendedMetrics.dragFactor,
-                        rawDistance: baseMetricsCurrent.distance,
-                        rawStrokeCount: baseMetricsCurrent.strokeCount,
-                        handleForces,
-                        peakForce,
-                        peakForcePositionNorm:
-                            currentPhysicalCurve !== undefined && forceCurve.driveLength > 0
-                                ? ((forceCurve.samples[peakForceIndex]?.distance ?? 0) /
-                                      forceCurve.driveLength) *
-                                  100
-                                : handleForces.length > 1
-                                  ? (peakForceIndex / (handleForces.length - 1)) * 100
-                                  : 0,
-                        strokeRate: this.calculateStrokeRate(baseMetricsPrevious, baseMetricsCurrent),
-                        speed: this.calculateSpeed(baseMetricsPrevious, baseMetricsCurrent),
-                        distPerStroke: this.calculateStrokeDistance(baseMetricsPrevious, baseMetricsCurrent),
-                        driveLength: forceCurve.driveLength,
-                        forceCurve: forceCurve.samples,
-                        powerBalance,
-                    };
-                },
-            ),
-        );
-    }
+            return inputs$.pipe(
+                scan(
+                    (state: AssemblyState, input: StrokeMetricInput): AssemblyState => {
+                        switch (input.type) {
+                            case "base":
+                                return {
+                                    ...state,
+                                    update: state.assembler.acceptBaseMetrics(input.value),
+                                };
+                            case "extended":
+                                return {
+                                    ...state,
+                                    update: state.assembler.acceptExtendedMetrics(input.value, input.value.strokeId),
+                                };
+                            case "legacyForces":
+                                return {
+                                    ...state,
+                                    update: state.assembler.acceptLegacyForces(input.value),
+                                };
+                            case "physicalCurve":
+                                return {
+                                    ...state,
+                                    update: state.assembler.acceptPhysicalCurve(input.value),
+                                };
+                            case "physicalCurveSupport":
+                                return {
+                                    ...state,
+                                    update: state.assembler.acceptPhysicalCurveSupport(input.value),
+                                };
+                            case "reset":
+                                state.assembler.reset();
 
-    /**
-     * Produces a rolling kayak power-balance value (side-A fraction, 0–1).
-     *
-     * Uses `combineLatest` to ensure handle forces are always paired with their
-     * matching measurement, then deduplicates by strokeCount so only the last
-     * emission per stroke is kept. `pairwise()` surfaces consecutive [prev, curr]
-     * stroke pairs; only valid A+B pairs (odd stroke followed immediately by the
-     * next even stroke) pass the filter and feed the balance computation.
-     * Emits a new balance only when a complete pair is detected; between pairs the
-     * `withLatestFrom` in `streamBasicMetrics$` retains the last emitted value.
-     * Starts at 0.5 (perfectly balanced) before the first complete pair arrives.
-     */
-    private streamPowerBalance$(): Observable<number> {
-        return combineLatest([this.measurement$, this.forceValues$]).pipe(
-            distinctUntilChanged(
-                (
-                    [previousMeasurement]: [IBaseMetrics, Array<number>],
-                    [currentMeasurement]: [IBaseMetrics, Array<number>],
-                ): boolean => previousMeasurement.strokeCount === currentMeasurement.strokeCount,
-            ),
-            pairwise(),
-            filter(
-                ([[previousMeasurement], [currentMeasurement]]: [
-                    [IBaseMetrics, Array<number>],
-                    [IBaseMetrics, Array<number>],
-                ]): boolean =>
-                    previousMeasurement.strokeCount % 2 === 1 &&
-                    currentMeasurement.strokeCount === previousMeasurement.strokeCount + 1,
-            ),
-            map(
-                ([[, sideAForces], [, sideBForces]]: [
-                    [IBaseMetrics, Array<number>],
-                    [IBaseMetrics, Array<number>],
-                ]): number => {
-                    const meanA: number =
-                        sideAForces.length > 0
-                            ? sideAForces.reduce((sum: number, force: number): number => sum + force, 0) /
-                              sideAForces.length
-                            : 0;
-                    const meanB: number =
-                        sideBForces.length > 0
-                            ? sideBForces.reduce((sum: number, force: number): number => sum + force, 0) /
-                              sideBForces.length
-                            : 0;
-                    const totalForce: number = meanA + meanB;
+                                return { ...state, update: undefined };
+                        }
+                    },
+                    {
+                        assembler: new StrokeMetricsAssembler((sampleCount: number): number =>
+                            this.calculateLegacyDriveLength(sampleCount),
+                        ),
+                        update: undefined,
+                    },
+                ),
+                map((state: AssemblyState): IStrokeMetricUpdate | undefined => state.update),
+                filter(
+                    (update: IStrokeMetricUpdate | undefined): update is IStrokeMetricUpdate => update !== undefined,
+                ),
+                scan(
+                    (
+                        state: PowerBalanceState,
+                        update: IStrokeMetricUpdate,
+                    ): PowerBalanceState => {
+                        const sourceKey = `${update.sourceEpoch}:${update.sourceStrokeId}`;
+                        const completedForces = new Map(state.completedForces);
+                        const isCompletedCurve =
+                            update.metrics.forceCurveStatus === "complete" ||
+                            update.metrics.forceCurveStatus === "legacy";
+                        if (isCompletedCurve && update.metrics.handleForces.length > 0) {
+                            completedForces.set(sourceKey, update.metrics.handleForces);
+                        }
 
-                    return totalForce > 0 ? meanA / totalForce : 0.5;
-                },
-            ),
-            startWith(0.5),
-        );
-    }
+                        let balance = state.balance;
+                        const priorKey = `${update.sourceEpoch}:${update.sourceStrokeId - 1}`;
+                        const priorForces = completedForces.get(priorKey);
+                        const currentForces = completedForces.get(sourceKey);
+                        if (update.sourceStrokeId % 2 === 0 && priorForces !== undefined && currentForces !== undefined) {
+                            const mean = (forces: Array<number>): number =>
+                                forces.reduce((sum: number, force: number): number => sum + force, 0) /
+                                forces.length;
+                            const meanA = mean(priorForces);
+                            const meanB = mean(currentForces);
+                            balance = meanA + meanB > 0 ? meanA / (meanA + meanB) : 0.5;
+                        }
 
-    private streamExtended$(): Observable<IExtendedMetrics> {
-        return this.ergMetricService.streamExtended$().pipe(
-            startWith({
-                avgStrokePower: 0,
-                dragFactor: 0,
-                driveDuration: 0,
-                recoveryDuration: 0,
-            }),
-        );
+                        return {
+                            balance,
+                            completedForces,
+                            update: {
+                                ...update,
+                                metrics: { ...update.metrics, powerBalance: balance },
+                            },
+                        };
+                    },
+                    { balance: 0.5, completedForces: new Map<string, Array<number>>() },
+                ),
+                map((state: PowerBalanceState): IStrokeMetricUpdate => state.update!),
+            );
+        });
     }
 }

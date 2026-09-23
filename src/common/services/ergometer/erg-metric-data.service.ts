@@ -138,6 +138,17 @@ export class ErgMetricsService {
         );
     }
 
+    /** True only while the connected firmware exposes the stroke-keyed V2 curve characteristic. */
+    streamHandleForceCurveSupport$(): Observable<boolean> {
+        return this.ergConnectionService.handleForceCurveCharacteristic$.pipe(
+            map(
+                (characteristic: BluetoothRemoteGATTCharacteristic | undefined): boolean =>
+                    characteristic !== undefined,
+            ),
+            distinctUntilChanged(),
+        );
+    }
+
     streamMeasurement$(): Observable<IBaseMetrics> {
         return this.ergConnectionService.measurementCharacteristic$.pipe(
             filter(
@@ -198,12 +209,30 @@ export class ErgMetricsService {
         extendedCharacteristic: BluetoothRemoteGATTCharacteristic,
     ): Observable<IExtendedMetrics> {
         return observeValue$(extendedCharacteristic).pipe(
-            map((value: DataView): IExtendedMetrics => ({
-                avgStrokePower: value.getUint16(0, true),
-                driveDuration: Math.round((value.getUint16(2, true) / 4096) * 1e6),
-                recoveryDuration: Math.round((value.getUint16(4, true) / 4096) * 1e6),
-                dragFactor: value.byteLength >= 8 ? value.getUint16(6, true) : value.getUint8(6),
-            })),
+            map((value: DataView): IExtendedMetrics => {
+                // The first eight bytes remain the legacy format. V2 appends a
+                // versioned, stroke-keyed extension with 32-bit microseconds,
+                // so older clients continue to read their original fields.
+                const isV2 = value.byteLength >= 20 && value.getUint8(8) === 2;
+
+                return {
+                    avgStrokePower: value.getUint16(0, true),
+                    driveDuration: isV2
+                        ? value.getUint32(12, true)
+                        : Math.round((value.getUint16(2, true) / 4096) * 1e6),
+                    recoveryDuration: isV2
+                        ? value.getUint32(16, true)
+                        : Math.round((value.getUint16(4, true) / 4096) * 1e6),
+                    dragFactor: value.byteLength >= 8 ? value.getUint16(6, true) : value.getUint8(6),
+                    ...(isV2
+                        ? {
+                              strokeId: value.getUint16(10, true),
+                              recoveryMetricsComplete: (value.getUint8(9) & 0x01) !== 0,
+                              legacyDurationClamped: (value.getUint8(9) & 0x02) !== 0,
+                          }
+                        : {}),
+                };
+            }),
             finalize((): void => {
                 this.ergConnectionService.resetExtendedCharacteristic();
             }),

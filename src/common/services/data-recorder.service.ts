@@ -26,6 +26,8 @@ import { downloadFiles } from "../utils/utility.functions";
 })
 export class DataRecorderService {
     private _sessionId: number = Date.now();
+    /** Serializes writes so the legacy timestamp primary key cannot collide under rapid BLE updates. */
+    private sessionWriteTail: Promise<void> = Promise.resolve();
 
     get currentSessionId(): number {
         return this._sessionId;
@@ -58,12 +60,35 @@ export class DataRecorderService {
     }
 
     addSessionData(rowingData: ISessionData): Promise<void> {
-        const timeStamp: number = Date.now();
+        const write = this.sessionWriteTail.then((): Promise<void> => this.upsertSessionData(rowingData));
+        // A rejected write must be reported to its caller but must not poison
+        // later strokes in the queue.
+        this.sessionWriteTail = write.catch((): void => undefined);
+
+        return write;
+    }
+
+    private async upsertSessionData(rowingData: ISessionData): Promise<void> {
         const sessionId: number = this.currentSessionId;
 
-        return appDB.transaction("rw", appDB.sessionData, appDB.handleForces, async (): Promise<void> => {
+        await appDB.transaction("rw", appDB.sessionData, appDB.handleForces, async (): Promise<void> => {
+            const [sessionMetrics, existingForce] = await Promise.all([
+                appDB.sessionData.where({ sessionId }).toArray(),
+                appDB.handleForces.where({ sessionId, strokeId: rowingData.strokeCount }).last(),
+            ]);
+            const existingMetric = sessionMetrics.find(
+                (metric: IMetricsEntity): boolean => metric.strokeCount === rowingData.strokeCount,
+            );
+            const latestMetric = sessionMetrics.reduce(
+                (latest: IMetricsEntity | undefined, metric: IMetricsEntity): IMetricsEntity =>
+                    latest === undefined || metric.timeStamp > latest.timeStamp ? metric : latest,
+                undefined,
+            );
+            const timeStamp =
+                existingMetric?.timeStamp ?? Math.max(Date.now(), (latestMetric?.timeStamp ?? 0) + 1);
+
             await Promise.all([
-                appDB.sessionData.add({
+                appDB.sessionData.put({
                     sessionId,
                     timeStamp,
                     avgStrokePower: rowingData.avgStrokePower,
@@ -77,22 +102,17 @@ export class DataRecorderService {
                     strokeRate: rowingData.strokeRate,
                     elapsedTime: rowingData.elapsedTime,
                     heartRate: rowingData.heartRate,
+                    isExtendedMetricsPending: rowingData.isExtendedMetricsPending,
                 }),
                 appDB.handleForces.put({
-                    timeStamp:
-                        (
-                            await appDB.handleForces
-                                .where({
-                                    sessionId,
-                                    strokeId: rowingData.strokeCount,
-                                })
-                                .last()
-                        )?.timeStamp ?? timeStamp,
+                    timeStamp: existingForce?.timeStamp ?? timeStamp,
                     sessionId,
                     strokeId: rowingData.strokeCount,
                     handleForces: rowingData.handleForces,
                     driveLength: rowingData.driveLength,
                     forceCurve: rowingData.forceCurve,
+                    forceCurveStatus: rowingData.forceCurveStatus,
+                    isDriveLengthAnomalous: rowingData.isDriveLengthAnomalous,
                 }),
             ]);
         });
@@ -313,15 +333,13 @@ export class DataRecorderService {
         ].join(",");
 
         let csvBody = `${headers}\n`;
-        let previousStroke: IExportRecord | undefined = records[0];
+        let previousStroke: IExportRecord | undefined;
 
         for (const data of records) {
-            if (previousStroke !== data && previousStroke.strokeCount === data.strokeCount) {
-                continue;
-            }
+            const previous = previousStroke ?? data;
 
             const calculatedSpeed =
-                previousStroke.distance === 0
+                previous.distance === 0
                     ? data.elapsedTime > 0
                         ? data.distance / 100 / data.elapsedTime
                         : 0
@@ -405,8 +423,21 @@ export class DataRecorderService {
                 const records: Array<IExportRecord> = [];
                 let totalWork = 0;
 
-                for (const metric of metricsEntities) {
-                    totalWork += metric.avgStrokePower * (metric.driveDuration + metric.recoveryDuration);
+                // Older app versions wrote periodic snapshots as new records.
+                // Keep the newest snapshot for each stroke so importing old
+                // data cannot double-count work, and new late-arriving curve
+                // updates replace their owning stroke instead of adding one.
+                const newestMetricsByStroke = new Map<number, IMetricsEntity>();
+                for (const metric of metricsEntities.sort((a, b): number => a.timeStamp - b.timeStamp)) {
+                    newestMetricsByStroke.set(metric.strokeCount, metric);
+                }
+
+                for (const metric of [...newestMetricsByStroke.values()].sort(
+                    (a, b): number => a.timeStamp - b.timeStamp,
+                )) {
+                    if (metric.isExtendedMetricsPending !== true) {
+                        totalWork += metric.avgStrokePower * (metric.driveDuration + metric.recoveryDuration);
+                    }
                     records.push({
                         avgStrokePower: metric.avgStrokePower,
                         distance: metric.distance,
@@ -419,6 +450,7 @@ export class DataRecorderService {
                         strokeRate: metric.strokeRate,
                         elapsedTime: metric.elapsedTime,
                         heartRate: metric.heartRate,
+                        isExtendedMetricsPending: metric.isExtendedMetricsPending,
                         timeStamp: new Date(metric.timeStamp),
                         totalWork,
                     });
@@ -442,12 +474,16 @@ export class DataRecorderService {
                     handleForces[entity.strokeId] = {
                         peakForce,
                         peakForcePositionNorm:
-                            entity.handleForces.length > 1
+                            entity.forceCurve !== undefined && entity.driveLength > 0
+                                ? ((entity.forceCurve[peakForceIndex]?.distance ?? 0) / entity.driveLength) * 100
+                                : entity.handleForces.length > 1
                                 ? (peakForceIndex / (entity.handleForces.length - 1)) * 100
                                 : 0,
                         driveLength: entity.driveLength,
                         handleForces: entity.handleForces,
                         forceCurve: entity.forceCurve,
+                        forceCurveStatus: entity.forceCurveStatus,
+                        isDriveLengthAnomalous: entity.isDriveLengthAnomalous,
                     };
                 }
 

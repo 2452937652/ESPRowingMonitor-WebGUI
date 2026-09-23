@@ -303,7 +303,7 @@ describe("SessionAnalysisService", (): void => {
 
             const result = await service.loadSession(mockSessionId);
 
-            expect(result.records).toHaveLength(3);
+            expect(result.records).toHaveLength(2);
             expect(result.strokes).toHaveLength(2);
             expect(result.strokes[0].strokeIndex).toBe(1);
             expect(result.strokes[1].strokeIndex).toBe(2);
@@ -936,7 +936,7 @@ describe("SessionAnalysisService", (): void => {
 
             const result = service.loadFromJson(exportSession);
 
-            expect(result.records).toHaveLength(3);
+            expect(result.records).toHaveLength(2);
             expect(result.strokes).toHaveLength(2);
             expect(result.strokes[0].strokeIndex).toBe(1);
             expect(result.strokes[1].strokeIndex).toBe(2);

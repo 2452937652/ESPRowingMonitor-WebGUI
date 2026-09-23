@@ -793,25 +793,31 @@ describe("DashboardComponent", (): void => {
             expect(component.tileEntries().get("unknown" as DashboardTileId)).toBeUndefined();
         });
 
-        it("should contain label, icon and rowingData for a rowingData-only tile with icon", (): void => {
+        it("should include trend inputs for a trend-enabled rowingData tile", (): void => {
             const inputs = component.tileEntries().get("pace")?.inputs;
 
-            expect(Object.keys(inputs ?? {}).sort()).toEqual(["icon", "label", "rowingData"]);
+            expect(Object.keys(inputs ?? {}).sort()).toEqual([
+                "icon",
+                "label",
+                "rowingData",
+                "trendHistory",
+                "trendStyle",
+            ]);
             expect(inputs?.rowingData).toBe(component.rowingData());
             expect(inputs?.label).toBe("Pace");
             expect(inputs?.icon).toBe("speed");
         });
 
-        it("should contain label and rowingData but no icon for a tile without icon", (): void => {
+        it("should include trend inputs for a trend-enabled tile without an icon", (): void => {
             const inputs = component.tileEntries().get("dragFactor")?.inputs;
 
-            expect(Object.keys(inputs ?? {}).sort()).toEqual(["label", "rowingData"]);
+            expect(Object.keys(inputs ?? {}).sort()).toEqual(["label", "rowingData", "trendHistory", "trendStyle"]);
             expect(inputs?.rowingData).toBe(component.rowingData());
             expect(inputs?.label).toBe("Drag Factor");
             expect(inputs?.icon).toBeUndefined();
         });
 
-        it("should contain label, icon, rowingData and displayConfig for distance tile", (): void => {
+        it("should include distance trend inputs", (): void => {
             const inputs = component.tileEntries().get("distance")?.inputs;
 
             expect(Object.keys(inputs ?? {}).sort()).toEqual([
@@ -819,6 +825,8 @@ describe("DashboardComponent", (): void => {
                 "icon",
                 "label",
                 "rowingData",
+                "trendHistory",
+                "trendStyle",
             ]);
             expect(inputs?.rowingData).toBe(component.rowingData());
             expect(inputs?.displayConfig).toBe(component.displayConfig());
@@ -826,10 +834,16 @@ describe("DashboardComponent", (): void => {
             expect(inputs?.icon).toBe("distance");
         });
 
-        it("should contain label, icon and elapseTime for timer tile", (): void => {
+        it("should include timer trend inputs", (): void => {
             const inputs = component.tileEntries().get("timer")?.inputs;
 
-            expect(Object.keys(inputs ?? {}).sort()).toEqual(["elapseTime", "icon", "label"]);
+            expect(Object.keys(inputs ?? {}).sort()).toEqual([
+                "elapseTime",
+                "icon",
+                "label",
+                "trendHistory",
+                "trendStyle",
+            ]);
             expect(inputs?.elapseTime).toBe(component.elapseTime());
             expect(inputs?.label).toBe("Timer");
             expect(inputs?.icon).toBe("timer");

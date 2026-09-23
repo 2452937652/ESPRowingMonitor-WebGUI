@@ -11,7 +11,7 @@ import { MetricComponent } from "../metric/metric.component";
         <app-metric
             [title]="label()"
             [icon]="icon()"
-            [value]="(rowingData().avgStrokePower | number: '0.0-0') ?? '--'"
+            [value]="rowingData().isExtendedMetricsPending === true ? '--' : ((rowingData().avgStrokePower | number: '0.0-0') ?? '--')"
             unit="watt"
             [trendSamples]="trendHistory().power"
             [trendStyle]="trendStyle()"

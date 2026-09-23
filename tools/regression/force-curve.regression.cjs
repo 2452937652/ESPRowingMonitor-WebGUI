@@ -141,16 +141,21 @@ test("lost last packet does not poison the next complete stroke", () => {
     decoder.accept(packet(11, 1, 2, [[0, 10]], 2));
     assert.equal(decoder.accept(packet(11, 2, 2, [[0.5, 20]], 2)).strokeId, 11);
 });
-test("missing, duplicate and out-of-order chunks never publish a partial curve", () => {
-    for (const sequence of [
-        [1, 3],
-        [1, 2, 2, 3],
-        [2, 1, 3],
-    ]) {
+test("missing and out-of-order chunks never publish a partial curve", () => {
+    for (const sequence of [[1, 3], [2, 1, 3]]) {
         const decoder = new ForceCurveDecoder();
         for (const i of sequence) assert.equal(decoder.accept(packet(4, i, 3, [[i / 4, 10]], 3)), undefined);
         assert.equal(decoder.accept(packet(5)).strokeId, 5);
     }
+});
+test("a duplicate chunk is idempotent and still completes its full curve", () => {
+    const decoder = new ForceCurveDecoder();
+    assert.equal(decoder.accept(packet(4, 1, 3, [[0.25, 10]], 3)), undefined);
+    assert.equal(decoder.accept(packet(4, 2, 3, [[0.5, 20]], 3)), undefined);
+    assert.equal(decoder.accept(packet(4, 2, 3, [[0.5, 20]], 3)), undefined);
+    const complete = decoder.accept(packet(4, 3, 3, [[0.75, 30]], 3));
+    assert.equal(complete.strokeId, 4);
+    assert.equal(complete.samples.length, 3);
 });
 test("inconsistent headers, NaN, backwards samples and excess size are rejected", () => {
     const decoder = new ForceCurveDecoder();
@@ -242,7 +247,7 @@ test("legacy and mixed history use a consistent sample-index domain", () => {
     assert.equal(component.singleStrokeChartOptions().scales.x.max, 4);
     assert.equal(component.singleStrokeChartOptions().scales.x.title.text, "Sample Index");
 });
-test("dashboard preserves short distances and expands once for long strokes", () => {
+test("dashboard resets after valid long strokes and keeps anomalous raw points diagnosable", () => {
     const { ForceCurveTileComponent } = load("src/app/dashboard/tiles/force-curve-tile.component.ts");
     const tile = new ForceCurveTileComponent();
     tile.label.set("Force Curve");
@@ -259,7 +264,15 @@ test("dashboard preserves short distances and expands once for long strokes", ()
     tile.rowingData.set({ ...stroke, driveLength: 2.8 });
     assert.equal(tile.forceChartOptions().scales.x.max, 3);
     tile.rowingData.set(stroke);
-    assert.equal(tile.forceChartOptions().scales.x.max, 3);
+    assert.equal(tile.forceChartOptions().scales.x.max, 2);
+    tile.rowingData.set({
+        ...stroke,
+        driveLength: 61.37,
+        forceCurve: [{ distance: 61.37, force: 20 }],
+        isDriveLengthAnomalous: true,
+    });
+    assert.equal(tile.forceChartOptions().scales.x.max, 2);
+    assert.equal(tile.curvePoints().at(-1).x, 61.37);
     tile.rowingData.set({ ...stroke, driveLength: 0, forceCurve: undefined, handleForces: [1, 2, 3, 4, 5] });
     assert.equal(tile.forceChartOptions().scales.x.max, 4);
     assert.equal(tile.forceChartOptions().scales.x.ticks.callback(3), "3");

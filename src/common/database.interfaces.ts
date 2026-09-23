@@ -1,4 +1,4 @@
-import { IForceCurvePoint, ISessionData } from "./common.interfaces";
+import { ForceCurveStatus, IForceCurvePoint, ISessionData } from "./common.interfaces";
 
 export interface ISessionUploadEntity {
     sessionId: number;
@@ -12,6 +12,8 @@ export interface IMetricsEntity extends Omit<
     | "handleForces"
     | "driveLength"
     | "forceCurve"
+    | "forceCurveStrokeId"
+    | "displayForceCurve"
     | "totalWork"
     | "powerBalance"
     | "powerBalancePairCount"
@@ -27,6 +29,8 @@ export interface IHandleForcesEntity {
     handleForces: Array<number>;
     driveLength: number;
     forceCurve?: Array<IForceCurvePoint>;
+    forceCurveStatus?: ForceCurveStatus;
+    isDriveLengthAnomalous?: boolean;
 }
 
 export interface IDeltaTimesEntity {
@@ -69,6 +73,8 @@ export interface IExportHandleForces {
     driveLength: number;
     handleForces: Array<number>;
     forceCurve?: Array<IForceCurvePoint>;
+    forceCurveStatus?: ForceCurveStatus;
+    isDriveLengthAnomalous?: boolean;
 }
 
 export type ILapExport = Omit<ILapEntity, "sessionId">;

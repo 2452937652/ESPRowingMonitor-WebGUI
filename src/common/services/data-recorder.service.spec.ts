@@ -52,7 +52,7 @@ describe("DataRecorderService", (): void => {
     let deltaTimesWhereSpy: Mock;
     let lapsAddSpy: Mock;
     let lapsWhereSpy: Mock;
-    let sessionDataAddSpy: Mock;
+    let sessionDataPutSpy: Mock;
     let sessionDataWhereSpy: Mock;
     let handleForcesPutSpy: Mock;
     let handleForcesWhereSpy: Mock;
@@ -89,7 +89,7 @@ describe("DataRecorderService", (): void => {
         deltaTimesWhereSpy = vi.spyOn(appDB.deltaTimes, "where");
         lapsAddSpy = vi.spyOn(appDB.laps, "add");
         lapsWhereSpy = vi.spyOn(appDB.laps, "where");
-        sessionDataAddSpy = vi.spyOn(appDB.sessionData, "add");
+        sessionDataPutSpy = vi.spyOn(appDB.sessionData, "put");
         sessionDataWhereSpy = vi.spyOn(appDB.sessionData, "where");
         vi.spyOn(appDB.sessionData, "orderBy");
         handleForcesPutSpy = vi.spyOn(appDB.handleForces, "put");
@@ -173,13 +173,13 @@ describe("DataRecorderService", (): void => {
             );
         });
 
-        it("should call sessionData.add with correct metrics data", async (): Promise<void> => {
+        it("should upsert session data with correct metrics data", async (): Promise<void> => {
             const sessionData = createMockSessionData();
 
             await service.addSessionData(sessionData as Parameters<typeof service.addSessionData>[0]);
 
-            expect(sessionDataAddSpy).toHaveBeenCalledTimes(1);
-            expect(sessionDataAddSpy).toHaveBeenCalledWith({
+            expect(sessionDataPutSpy).toHaveBeenCalledTimes(1);
+            expect(sessionDataPutSpy).toHaveBeenCalledWith({
                 sessionId: mockTimeStamp,
                 timeStamp: mockTimeStamp,
                 avgStrokePower: sessionData.avgStrokePower,
@@ -251,11 +251,43 @@ describe("DataRecorderService", (): void => {
 
             await service.addSessionData(sessionDataWithHR as Parameters<typeof service.addSessionData>[0]);
 
-            expect(sessionDataAddSpy).toHaveBeenCalledWith(
+            expect(sessionDataPutSpy).toHaveBeenCalledWith(
                 expect.objectContaining({
                     heartRate: { heartRate: 140, contactDetected: true },
                 }),
             );
+        });
+
+        it("updates the existing session stroke rather than adding a second record for a late curve", async (): Promise<void> => {
+            const sessionData = createMockSessionData();
+            await service.addSessionData(sessionData as Parameters<typeof service.addSessionData>[0]);
+            await service.addSessionData({
+                ...sessionData,
+                avgStrokePower: 200,
+                forceCurveStatus: "complete",
+                forceCurve: [
+                    { distance: 0, elapsedTime: 0, force: 10 },
+                    { distance: 1.5, elapsedTime: 0.8, force: 100 },
+                ],
+            } as Parameters<typeof service.addSessionData>[0]);
+
+            const metrics = await appDB.sessionData
+                .where({ sessionId: mockTimeStamp, strokeCount: sessionData.strokeCount })
+                .toArray();
+            const forces = await appDB.handleForces
+                .where({ sessionId: mockTimeStamp, strokeId: sessionData.strokeCount })
+                .toArray();
+
+            expect(metrics).toHaveLength(1);
+            expect(metrics[0].avgStrokePower).toBe(200);
+            expect(forces).toHaveLength(1);
+            expect(forces[0]).toMatchObject({
+                forceCurveStatus: "complete",
+                forceCurve: [
+                    { distance: 0, elapsedTime: 0, force: 10 },
+                    { distance: 1.5, elapsedTime: 0.8, force: 100 },
+                ],
+            });
         });
     });
 

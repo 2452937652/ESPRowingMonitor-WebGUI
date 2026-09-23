@@ -51,6 +51,7 @@ export class LanguageService implements OnDestroy {
         "Reset Layout": "重置布局",
         "Clear Layout": "清空布局",
         "Force Curve": "拉力曲线",
+        "Anomalous drive": "异常驱动距离",
         "Sample Index": "采样序号",
         "Show Peak Force in Title": "在标题中显示峰值拉力",
         "Show Grid Lines": "显示网格线",
