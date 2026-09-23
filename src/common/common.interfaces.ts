@@ -117,6 +117,10 @@ export interface IDisplayForceCurveConfig {
     showPeakForceInTitle: boolean;
     showGridLines: boolean;
     showAxisLabels: boolean;
+    /** Zero retains automatic scaling; positive values make physical curves directly comparable. */
+    axisMaxDistanceCm: number;
+    /** Zero retains automatic scaling; positive values make force values directly comparable. */
+    axisMaxForceN: number;
 }
 
 export type AveragingMode = "off" | "all" | "performance";
@@ -161,6 +165,8 @@ export class Config {
             showPeakForceInTitle: true,
             showGridLines: true,
             showAxisLabels: true,
+            axisMaxDistanceCm: 0,
+            axisMaxForceN: 0,
         },
         layout: {
             landscape: DEFAULT_LANDSCAPE_LAYOUT,

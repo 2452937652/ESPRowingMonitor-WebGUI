@@ -474,6 +474,78 @@ describe("ForceCurveTileComponent", (): void => {
             expect((component.forceChartOptions().scales?.x as { max: number }).max).toBe(2);
         });
 
+        it("uses user-selected fixed physical axis ranges and marks a curve that exceeds them", async (): Promise<void> => {
+            fixture.componentRef.setInput("displayConfig", {
+                ...mockInitialDisplayConfig,
+                forceCurve: {
+                    ...mockInitialDisplayConfig.forceCurve,
+                    axisMaxDistanceCm: 200,
+                    axisMaxForceN: 500,
+                },
+            });
+            fixture.componentRef.setInput("rowingData", {
+                ...mockInitialMetrics,
+                driveLength: 2.4,
+                forceCurveStatus: "complete",
+                forceCurve: [
+                    { distance: 0, elapsedTime: 0, force: 10 },
+                    { distance: 1.2, elapsedTime: 0.5, force: 650 },
+                    { distance: 2.4, elapsedTime: 1, force: 0 },
+                ],
+            });
+            await fixture.whenStable();
+
+            const scales = component.forceChartOptions().scales as {
+                x: { min: number; max: number };
+                y: { min: number; max: number };
+            };
+            expect(scales.x.min).toBe(0);
+            expect(scales.x.max).toBe(2);
+            expect(scales.y.min).toBe(0);
+            expect(scales.y.max).toBe(500);
+            expect(component.forceChartOptions().plugins?.legend?.title?.text).toContain(
+                "Outside selected axis range",
+            );
+        });
+
+        it("returns to automatic force scaling when an axis maximum is set back to zero", async (): Promise<void> => {
+            fixture.componentRef.setInput("displayConfig", {
+                ...mockInitialDisplayConfig,
+                forceCurve: {
+                    ...mockInitialDisplayConfig.forceCurve,
+                    axisMaxDistanceCm: 200,
+                    axisMaxForceN: 500,
+                },
+            });
+            fixture.componentRef.setInput("rowingData", {
+                ...mockInitialMetrics,
+                driveLength: 2.4,
+                forceCurveStatus: "complete",
+                forceCurve: [
+                    { distance: 0, elapsedTime: 0, force: 10 },
+                    { distance: 2.4, elapsedTime: 1, force: 650 },
+                ],
+            });
+            await fixture.whenStable();
+
+            fixture.componentRef.setInput("displayConfig", {
+                ...mockInitialDisplayConfig,
+                forceCurve: {
+                    ...mockInitialDisplayConfig.forceCurve,
+                    axisMaxDistanceCm: 0,
+                    axisMaxForceN: 0,
+                },
+            });
+            await fixture.whenStable();
+
+            const scales = component.forceChartOptions().scales as {
+                x: { max: number };
+                y: { max: number | undefined };
+            };
+            expect(scales.x.max).toBe(3);
+            expect(scales.y.max).toBeUndefined();
+        });
+
         it("flags an anomalous raw curve without permanently expanding the normal display axis", async (): Promise<void> => {
             fixture.componentRef.setInput("rowingData", {
                 ...mockInitialMetrics,
@@ -627,6 +699,8 @@ describe("ForceCurveTileComponent", (): void => {
                     showPeakForceInTitle: false,
                     showGridLines: false,
                     showAxisLabels: false,
+                    axisMaxDistanceCm: 0,
+                    axisMaxForceN: 0,
                 },
             });
             fixture.detectChanges();

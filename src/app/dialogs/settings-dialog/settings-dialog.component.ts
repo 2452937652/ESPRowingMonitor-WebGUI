@@ -374,6 +374,8 @@ export class SettingsDialogComponent {
                     showPeakForceInTitle: formValue.showPeakForceInTitle,
                     showGridLines: formValue.showGridLines,
                     showAxisLabels: formValue.showAxisLabels,
+                    axisMaxDistanceCm: formValue.axisMaxDistanceCm,
+                    axisMaxForceN: formValue.axisMaxForceN,
                 },
                 layout: display.getLayoutConfig(),
                 averaging: display.getAveragingConfig(),

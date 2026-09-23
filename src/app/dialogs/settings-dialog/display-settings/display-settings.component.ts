@@ -10,12 +10,20 @@ import {
     WritableSignal,
 } from "@angular/core";
 import { toSignal } from "@angular/core/rxjs-interop";
-import { FormControl, FormGroup, NonNullableFormBuilder, ReactiveFormsModule } from "@angular/forms";
+import {
+    FormControl,
+    FormGroup,
+    NonNullableFormBuilder,
+    ReactiveFormsModule,
+    Validators,
+} from "@angular/forms";
 import { MatButton } from "@angular/material/button";
 import { MatButtonToggle, MatButtonToggleGroup } from "@angular/material/button-toggle";
 import { MatCheckbox } from "@angular/material/checkbox";
 import { MatDivider } from "@angular/material/divider";
+import { MatError, MatFormField, MatHint } from "@angular/material/form-field";
 import { MatIcon } from "@angular/material/icon";
+import { MatInput } from "@angular/material/input";
 import { MatSliderModule } from "@angular/material/slider";
 import { MatTooltip } from "@angular/material/tooltip";
 import { startWith } from "rxjs";
@@ -44,6 +52,8 @@ type DisplaySettingsFormGroup = FormGroup<{
     showPeakForceInTitle: FormControl<boolean>;
     showGridLines: FormControl<boolean>;
     showAxisLabels: FormControl<boolean>;
+    axisMaxDistanceCm: FormControl<number>;
+    axisMaxForceN: FormControl<number>;
     unitSystem: FormControl<UnitSystem>;
     trendStyle: FormControl<TrendStyle>;
     averagingMode: FormControl<AveragingMode>;
@@ -68,7 +78,11 @@ interface IEditorLayout {
         MatButtonToggleGroup,
         MatCheckbox,
         MatDivider,
+        MatError,
+        MatFormField,
+        MatHint,
         MatIcon,
+        MatInput,
         MatSliderModule,
         MatTooltip,
         TileLayoutEditorComponent,
@@ -111,6 +125,8 @@ export class DisplaySettingsComponent {
             showPeakForceInTitle: boolean;
             showGridLines: boolean;
             showAxisLabels: boolean;
+            axisMaxDistanceCm: number;
+            axisMaxForceN: number;
             unitSystem: UnitSystem;
             averagingMode: AveragingMode;
             averagingWindowSize: number;
@@ -129,6 +145,14 @@ export class DisplaySettingsComponent {
             showPeakForceInTitle: [config.display.forceCurve.showPeakForceInTitle],
             showGridLines: [config.display.forceCurve.showGridLines],
             showAxisLabels: [config.display.forceCurve.showAxisLabels],
+            axisMaxDistanceCm: [
+                config.display.forceCurve.axisMaxDistanceCm,
+                [Validators.min(0), Validators.max(1000)],
+            ],
+            axisMaxForceN: [
+                config.display.forceCurve.axisMaxForceN,
+                [Validators.min(0), Validators.max(5000)],
+            ],
             unitSystem: [config.display.general.unitSystem],
             trendStyle: [config.display.general.trendStyle ?? "bars"],
             averagingMode: [config.display.averaging.mode],

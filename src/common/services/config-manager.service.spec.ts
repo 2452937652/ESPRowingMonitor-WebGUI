@@ -90,6 +90,8 @@ describe("ConfigManagerService", (): void => {
             expect(cfg.general.device.heartRateBleId).toBe("hr-123");
             expect(cfg.general.device.ergoMonitorBleId).toBe("erg-456");
             expect(cfg.display.forceCurve.showPeakForceInTitle).toBe(false);
+            expect(cfg.display.forceCurve.axisMaxDistanceCm).toBe(0);
+            expect(cfg.display.forceCurve.axisMaxForceN).toBe(0);
         });
 
         it("should force HR off and clear BLE ids on insecure context and persist them", (): void => {

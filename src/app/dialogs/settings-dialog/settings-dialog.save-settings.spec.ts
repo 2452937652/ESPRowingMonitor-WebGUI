@@ -159,6 +159,10 @@ describe("SettingsDialogComponent saveSettings method", (): void => {
         const mockGeneralForm = createMockGeneralForm(false);
         const mockRowingForm = createMockRowingForm(false);
         const mockDisplayForm = createMockDisplayForm(true);
+        mockDisplayForm.controls.axisMaxDistanceCm.value = 200;
+        mockDisplayForm.controls.axisMaxForceN.value = 1000;
+        mockDisplayForm.value.axisMaxDistanceCm = 200;
+        mockDisplayForm.value.axisMaxForceN = 1000;
 
         vi.spyOn(component, "generalSettings").mockReturnValue({
             getForm: vi.fn().mockReturnValue(mockGeneralForm),
@@ -195,6 +199,8 @@ describe("SettingsDialogComponent saveSettings method", (): void => {
                 showPeakForceInTitle: true,
                 showGridLines: true,
                 showAxisLabels: true,
+                axisMaxDistanceCm: 200,
+                axisMaxForceN: 1000,
             },
             layout: {
                 landscape: DEFAULT_LANDSCAPE_LAYOUT,
@@ -254,6 +260,8 @@ describe("SettingsDialogComponent saveSettings method", (): void => {
                 showPeakForceInTitle: true,
                 showGridLines: true,
                 showAxisLabels: true,
+                axisMaxDistanceCm: 0,
+                axisMaxForceN: 0,
             },
             layout: customLayout,
             averaging: { mode: "off", windowSize: 3 },
@@ -827,6 +835,8 @@ describe("SettingsDialogComponent saveSettings method", (): void => {
                 showPeakForceInTitle: true,
                 showGridLines: true,
                 showAxisLabels: true,
+                axisMaxDistanceCm: 0,
+                axisMaxForceN: 0,
             },
             layout: customLayout,
             averaging: { mode: "off", windowSize: 3 },

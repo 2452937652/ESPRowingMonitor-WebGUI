@@ -71,6 +71,11 @@ describe("DisplaySettingsComponent", (): void => {
             expect(mockConfigManager.getConfig).toHaveBeenCalled();
         });
 
+        it("should initialize automatic force-curve axis limits from config", (): void => {
+            expect(component.settingsForm.controls.axisMaxDistanceCm.value).toBe(0);
+            expect(component.settingsForm.controls.axisMaxForceN.value).toBe(0);
+        });
+
         it("should initialize showPeakForceInTitle unchecked when config is false", (): void => {
             vi.mocked(mockConfigManager.getConfig).mockReturnValue(
                 createMockConfig({
@@ -104,6 +109,25 @@ describe("DisplaySettingsComponent", (): void => {
 
             expect(localComponent.settingsForm.controls.unitSystem.value).toBe("imperial");
         });
+
+        it("should initialize configured fixed force-curve axis limits", (): void => {
+            vi.mocked(mockConfigManager.getConfig).mockReturnValue(
+                createMockConfig({
+                    display: {
+                        forceCurve: {
+                            axisMaxDistanceCm: 200,
+                            axisMaxForceN: 1000,
+                        },
+                    },
+                }),
+            );
+
+            const localFixture = TestBed.createComponent(DisplaySettingsComponent);
+            const localComponent = localFixture.componentInstance;
+
+            expect(localComponent.settingsForm.controls.axisMaxDistanceCm.value).toBe(200);
+            expect(localComponent.settingsForm.controls.axisMaxForceN.value).toBe(1000);
+        });
     });
 
     describe("as part of template rendering", (): void => {
@@ -111,6 +135,13 @@ describe("DisplaySettingsComponent", (): void => {
             const checkbox = await loader.getHarness(MatCheckboxHarness);
 
             expect(checkbox).toBeTruthy();
+        });
+
+        it("should render force-curve axis inputs", (): void => {
+            fixture.detectChanges();
+
+            expect(fixture.nativeElement.querySelector("#force-curve-x-axis-max")).toBeTruthy();
+            expect(fixture.nativeElement.querySelector("#force-curve-y-axis-max")).toBeTruthy();
         });
 
         it("should render the unit system toggle group", async (): Promise<void> => {
@@ -185,6 +216,12 @@ describe("DisplaySettingsComponent", (): void => {
             await checkbox.toggle();
 
             expect(emitSpy).toHaveBeenCalledWith(true);
+        });
+
+        it("should reject a negative axis maximum", (): void => {
+            component.settingsForm.controls.axisMaxDistanceCm.setValue(-1);
+
+            expect(component.settingsForm.invalid).toBe(true);
         });
     });
 

@@ -68,6 +68,14 @@ export interface IMockDisplayForm {
             dirty: boolean;
             value: boolean;
         };
+        axisMaxDistanceCm: {
+            dirty: boolean;
+            value: number;
+        };
+        axisMaxForceN: {
+            dirty: boolean;
+            value: number;
+        };
         unitSystem: {
             dirty: boolean;
             value: string;
@@ -77,12 +85,16 @@ export interface IMockDisplayForm {
         showPeakForceInTitle: boolean;
         showGridLines: boolean;
         showAxisLabels: boolean;
+        axisMaxDistanceCm: number;
+        axisMaxForceN: number;
         unitSystem: string;
     };
     getRawValue: () => {
         showPeakForceInTitle: boolean;
         showGridLines: boolean;
         showAxisLabels: boolean;
+        axisMaxDistanceCm: number;
+        axisMaxForceN: number;
         unitSystem: string;
     };
 }
@@ -271,6 +283,14 @@ export const createMockDisplayForm: (dirty?: boolean, value?: boolean) => IMockD
                 dirty,
                 value: true,
             },
+            axisMaxDistanceCm: {
+                dirty,
+                value: 0,
+            },
+            axisMaxForceN: {
+                dirty,
+                value: 0,
+            },
             unitSystem: {
                 dirty,
                 value: "metric",
@@ -280,12 +300,16 @@ export const createMockDisplayForm: (dirty?: boolean, value?: boolean) => IMockD
             showPeakForceInTitle: value,
             showGridLines: true,
             showAxisLabels: true,
+            axisMaxDistanceCm: 0,
+            axisMaxForceN: 0,
             unitSystem: "metric",
         },
         getRawValue(): {
             showPeakForceInTitle: boolean;
             showGridLines: boolean;
             showAxisLabels: boolean;
+            axisMaxDistanceCm: number;
+            axisMaxForceN: number;
             unitSystem: string;
         } {
             return this.value;

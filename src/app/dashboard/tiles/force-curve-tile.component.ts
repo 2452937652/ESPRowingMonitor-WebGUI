@@ -238,23 +238,43 @@ export class ForceCurveTileComponent {
             display: shouldShowAxisLabels,
             color: "#49647f",
         };
+        this._forceChartOptions.scales.y.min = 0;
         this._forceChartOptions.scales.x.grid = { display: shouldShowGridLines };
         this._forceChartOptions.scales.x.border = {
             display: shouldShowAxisLabels || shouldShowGridLines,
         };
         const isPhysical = this.hasDistance();
         const lastDistance = this.forceCurve().at(-1)?.distance ?? 0;
+        const configuredXAxisMaxCm = ForceCurveTileComponent.toPositiveAxisMaximum(
+            this.displayConfig().forceCurve.axisMaxDistanceCm,
+        );
+        const configuredXAxisMaxMeters =
+            isPhysical && configuredXAxisMaxCm !== undefined ? configuredXAxisMaxCm / 100 : undefined;
+        const configuredYAxisMaxN = ForceCurveTileComponent.toPositiveAxisMaximum(
+            this.displayConfig().forceCurve.axisMaxForceN,
+        );
+        const maximumForce = handleForcesData.length > 0 ? Math.max(...handleForcesData) : 0;
+        const exceedsSelectedRange =
+            (configuredXAxisMaxMeters !== undefined &&
+                Math.max(reportedDriveLength, lastDistance) > configuredXAxisMaxMeters) ||
+            (configuredYAxisMaxN !== undefined && maximumForce > configuredYAxisMaxN);
+        const rangeWarning = exceedsSelectedRange
+            ? ` · ${this.languageService.t("Outside selected axis range")}`
+            : "";
         // A valid long drive expands only this render's scale. An anomalous
         // record remains available in the exported raw data but cannot poison
         // subsequent normal curves with a permanent 62 m axis.
-        this._forceChartOptions.scales.x.max = isPhysical
-            ? isDriveLengthAnomalous
-                ? ForceCurveTileComponent.FORCE_CURVE_DISPLAY_MAX_DISTANCE_METERS
-                : Math.max(
-                      ForceCurveTileComponent.FORCE_CURVE_DISPLAY_MAX_DISTANCE_METERS,
-                      Math.ceil(Math.max(reportedDriveLength, lastDistance)),
-                  )
-            : Math.max(1, lastDistance);
+        this._forceChartOptions.scales.x.max =
+            configuredXAxisMaxMeters ??
+            (isPhysical
+                ? isDriveLengthAnomalous
+                    ? ForceCurveTileComponent.FORCE_CURVE_DISPLAY_MAX_DISTANCE_METERS
+                    : Math.max(
+                          ForceCurveTileComponent.FORCE_CURVE_DISPLAY_MAX_DISTANCE_METERS,
+                          Math.ceil(Math.max(reportedDriveLength, lastDistance)),
+                      )
+                : Math.max(1, lastDistance));
+        this._forceChartOptions.scales.y.max = configuredYAxisMaxN;
         this._forceChartOptions.scales.x.title = {
             display: shouldShowAxisLabels,
             text: this.languageService.t(isPhysical ? "Drive Length" : "Sample Index"),
@@ -268,14 +288,17 @@ export class ForceCurveTileComponent {
 
         if (handleForcesData.length === 0) {
             this._forceChartOptions.plugins.legend.title.display = true;
-            this._forceChartOptions.plugins.legend.title.text = `${tileLabel}${sideLabel}${anomalyLabel}`;
+            this._forceChartOptions.plugins.legend.title.text = `${tileLabel}${sideLabel}${anomalyLabel}${rangeWarning}`;
             this._forceChartOptions.plugins.datalabels.display = false;
 
             return { ...this._forceChartOptions };
         }
 
-        this._forceChartOptions.plugins.legend.title.display = shouldShowPeakInTitle;
-        this._forceChartOptions.plugins.legend.title.text = `${this.languageService.t("Peak")}: ${Math.round(Math.max(...handleForcesData))}N${sideLabel}${anomalyLabel}`;
+        this._forceChartOptions.plugins.legend.title.display =
+            shouldShowPeakInTitle || isDriveLengthAnomalous || exceedsSelectedRange;
+        this._forceChartOptions.plugins.legend.title.text = shouldShowPeakInTitle
+            ? `${this.languageService.t("Peak")}: ${Math.round(maximumForce)}N${sideLabel}${anomalyLabel}${rangeWarning}`
+            : `${tileLabel}${sideLabel}${anomalyLabel}${rangeWarning}`;
         this._forceChartOptions.plugins.datalabels.display = shouldShowPeakInTitle
             ? false
             : (ctx: Context): boolean =>
@@ -295,6 +318,10 @@ export class ForceCurveTileComponent {
     );
 
     private readonly languageService: LanguageService = inject(LanguageService);
+
+    private static toPositiveAxisMaximum(value: number): number | undefined {
+        return Number.isFinite(value) && value > 0 ? value : undefined;
+    }
 
     private _forceChartOptions: ChartOptions<"line"> = {
         responsive: true,
@@ -342,6 +369,7 @@ export class ForceCurveTileComponent {
                 ticks: { stepSize: 0.25 },
             },
             y: {
+                min: 0,
                 ticks: { color: "#49647f" },
                 grid: { color: "rgba(42, 117, 188, 0.12)" },
                 beginAtZero: true,

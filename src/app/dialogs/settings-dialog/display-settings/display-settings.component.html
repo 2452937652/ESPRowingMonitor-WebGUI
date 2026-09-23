@@ -70,8 +70,42 @@
         </div>
         <mat-divider></mat-divider>
         <h4>Force Curve</h4>
-        <mat-checkbox formControlName="showPeakForceInTitle">Show peak force in title</mat-checkbox>
-        <mat-checkbox formControlName="showGridLines">Show grid lines</mat-checkbox>
-        <mat-checkbox formControlName="showAxisLabels">Show axis labels</mat-checkbox>
+        <mat-checkbox formControlName="showPeakForceInTitle">Show Peak Force in Title</mat-checkbox>
+        <mat-checkbox formControlName="showGridLines">Show Grid Lines</mat-checkbox>
+        <mat-checkbox formControlName="showAxisLabels">Show Axis Labels</mat-checkbox>
+        <div class="general-container force-curve-axis-limits">
+            <label for="force-curve-x-axis-max">X axis maximum (cm):</label>
+            <mat-form-field subscriptSizing="dynamic">
+                <input
+                    id="force-curve-x-axis-max"
+                    matInput
+                    formControlName="axisMaxDistanceCm"
+                    type="number"
+                    min="0"
+                    max="1000"
+                    step="1"
+                />
+                <mat-hint>0 = automatic</mat-hint>
+                @if (settingsForm.controls.axisMaxDistanceCm.invalid) {
+                    <mat-error>Enter a value from 0 to 1000</mat-error>
+                }
+            </mat-form-field>
+            <label for="force-curve-y-axis-max">Y axis maximum (N):</label>
+            <mat-form-field subscriptSizing="dynamic">
+                <input
+                    id="force-curve-y-axis-max"
+                    matInput
+                    formControlName="axisMaxForceN"
+                    type="number"
+                    min="0"
+                    max="5000"
+                    step="1"
+                />
+                <mat-hint>0 = automatic</mat-hint>
+                @if (settingsForm.controls.axisMaxForceN.invalid) {
+                    <mat-error>Enter a value from 0 to 5000</mat-error>
+                }
+            </mat-form-field>
+        </div>
     </form>
 </div>
