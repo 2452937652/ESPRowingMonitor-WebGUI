@@ -1,4 +1,4 @@
-import { ForceCurveStatus, IForceCurvePoint, ISessionData } from "./common.interfaces";
+import { ForceCurveStatus, IForceCurve, IForceCurvePoint, ISessionData } from "./common.interfaces";
 
 export interface ISessionUploadEntity {
     sessionId: number;
@@ -11,15 +11,19 @@ export interface IMetricsEntity extends Omit<
     | "peakForcePositionNorm"
     | "handleForces"
     | "driveLength"
-    | "forceCurve"
-    | "forceCurveStrokeId"
-    | "displayForceCurve"
     | "totalWork"
     | "powerBalance"
     | "powerBalancePairCount"
 > {
     sessionId: number;
     timeStamp: number;
+    /** Stable per-stroke identity for v5 rows. Omitted on preserved v4 data. */
+    strokeKey?: string;
+    sourceEpoch?: number;
+    sourceStrokeId?: number;
+    forceCurve?: IForceCurve;
+    forceCurveStatus?: ForceCurveStatus;
+    isExtendedMetricsPending?: boolean;
 }
 
 export interface IHandleForcesEntity {
@@ -30,7 +34,6 @@ export interface IHandleForcesEntity {
     driveLength: number;
     forceCurve?: Array<IForceCurvePoint>;
     forceCurveStatus?: ForceCurveStatus;
-    isDriveLengthAnomalous?: boolean;
 }
 
 export interface IDeltaTimesEntity {
@@ -42,6 +45,25 @@ export interface IDeltaTimesEntity {
 export interface IConnectedDeviceEntity {
     sessionId: number;
     deviceName: string;
+}
+
+export interface ISessionMetadataEntity {
+    sessionId: number;
+    /** Wall-clock time when the session was explicitly stopped, in milliseconds. */
+    finishAt: number;
+    /** Elapsed active session time at stop, in seconds. */
+    elapsedTime: number;
+}
+
+/** Metadata used to persist one logical stroke and to merge later supplements. */
+export interface IStrokePersistenceIdentity {
+    sourceEpoch?: number;
+    sourceStrokeId?: number;
+    /** Monotonic/logical stroke count used for legacy devices without V2 identity. */
+    logicalStrokeCount?: number;
+    forceCurve?: IForceCurve;
+    forceCurveStatus?: ForceCurveStatus;
+    isExtendedMetricsPending?: boolean;
 }
 
 export type LapType = "manual" | "distance" | "time";
@@ -60,11 +82,16 @@ export type IExportRecord = Omit<
     | "peakForcePositionNorm"
     | "handleForces"
     | "driveLength"
-    | "forceCurve"
     | "powerBalance"
     | "powerBalancePairCount"
 > & {
     timeStamp: Date;
+    strokeKey?: string;
+    sourceEpoch?: number;
+    sourceStrokeId?: number;
+    forceCurve?: IForceCurve;
+    forceCurveStatus?: ForceCurveStatus;
+    isExtendedMetricsPending?: boolean;
 };
 
 export interface IExportHandleForces {
@@ -74,7 +101,6 @@ export interface IExportHandleForces {
     handleForces: Array<number>;
     forceCurve?: Array<IForceCurvePoint>;
     forceCurveStatus?: ForceCurveStatus;
-    isDriveLengthAnomalous?: boolean;
 }
 
 export type ILapExport = Omit<ILapEntity, "sessionId">;
@@ -85,4 +111,8 @@ export interface IExportSession {
     records: Array<IExportRecord>;
     handleForces: Record<number, IExportHandleForces>;
     laps: Array<ILapExport>;
+    /** Explicit stop time for v5 sessions; absent on legacy/v4 imports. */
+    finishAt?: number;
+    /** Elapsed active time at stop for v5 sessions; absent on legacy/v4 imports. */
+    elapsedTime?: number;
 }

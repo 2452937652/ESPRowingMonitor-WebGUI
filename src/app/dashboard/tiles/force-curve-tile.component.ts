@@ -117,10 +117,10 @@ export class ForceCurveTileComponent {
             }
 
             return {
-                strokeId: data.forceCurveStrokeId ?? data.strokeCount,
-                driveLength: data.driveLength,
-                driveDuration: data.driveDuration,
-                samples: data.forceCurve,
+                strokeId: data.forceCurveStrokeId ?? data.forceCurve.strokeId,
+                driveLength: data.forceCurve.driveLength,
+                driveDurationUs: data.forceCurve.driveDurationUs,
+                samples: data.forceCurve.samples,
                 isDriveLengthAnomalous: data.isDriveLengthAnomalous === true,
             };
         },
@@ -154,7 +154,7 @@ export class ForceCurveTileComponent {
 
         return forces.map((force: number, index: number): IForceCurvePoint => ({
             distance: sampleDistance * index,
-            elapsedTime: 0,
+            elapsedTimeUs: 0,
             force,
         }));
     });
@@ -203,6 +203,8 @@ export class ForceCurveTileComponent {
         (): boolean => this.displayConfig().forceCurve.showAxisLabels,
     );
 
+    // axis, title, and peak-label options must be computed from the same curve snapshot.
+    // eslint-disable-next-line complexity
     readonly forceChartOptions: Signal<ChartOptions<"line">> = computed((): ChartOptions<"line"> => {
         const shouldShowPeakInTitle = this.showPeakInTitle();
         const handleForcesData = this.forceCurve().map(({ force }: IForceCurvePoint): number => force);
@@ -254,14 +256,14 @@ export class ForceCurveTileComponent {
             this.displayConfig().forceCurve.axisMaxForceN,
         );
         const maximumForce = handleForcesData.length > 0 ? Math.max(...handleForcesData) : 0;
-        const exceedsSelectedRange =
+        const isOutsideSelectedRange =
             (configuredXAxisMaxMeters !== undefined &&
                 Math.max(reportedDriveLength, lastDistance) > configuredXAxisMaxMeters) ||
             (configuredYAxisMaxN !== undefined && maximumForce > configuredYAxisMaxN);
-        const rangeWarning = exceedsSelectedRange
+        const rangeWarning = isOutsideSelectedRange
             ? ` · ${this.languageService.t("Outside selected axis range")}`
             : "";
-        // A valid long drive expands only this render's scale. An anomalous
+        // a valid long drive expands only this render's scale. An anomalous
         // record remains available in the exported raw data but cannot poison
         // subsequent normal curves with a permanent 62 m axis.
         this._forceChartOptions.scales.x.max =
@@ -295,7 +297,7 @@ export class ForceCurveTileComponent {
         }
 
         this._forceChartOptions.plugins.legend.title.display =
-            shouldShowPeakInTitle || isDriveLengthAnomalous || exceedsSelectedRange;
+            shouldShowPeakInTitle || isDriveLengthAnomalous || isOutsideSelectedRange;
         this._forceChartOptions.plugins.legend.title.text = shouldShowPeakInTitle
             ? `${this.languageService.t("Peak")}: ${Math.round(maximumForce)}N${sideLabel}${anomalyLabel}${rangeWarning}`
             : `${tileLabel}${sideLabel}${anomalyLabel}${rangeWarning}`;

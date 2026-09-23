@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, input, InputSignal } from "@angular/core";
 
-import { SecondsToTimePipe } from "../../../common/utils/seconds-to-time.pipe";
 import { EMPTY_TREND_HISTORY, TrendHistory, TrendStyle } from "../../../common/trend.interfaces";
+import { SecondsToTimePipe } from "../../../common/utils/seconds-to-time.pipe";
 import { MetricComponent } from "../metric/metric.component";
 
 @Component({

@@ -1,5 +1,6 @@
 import { fit_messages } from "@markw65/fit-file-writer";
 
+import { IForceCurvePoint } from "../../common.interfaces";
 import { IExportHandleForces, IExportRecord, ILapExport, LapType } from "../../database.interfaces";
 import { isKayakErgometer } from "../utility.functions";
 
@@ -208,10 +209,58 @@ const LAP_TRIGGER_MAP: Record<LapType, FitLapTrigger> = {
     time: "time",
 };
 
-export function computeMaxCurvePointCount(handleForces: Record<number, IExportHandleForces>): number {
+export function getRecordHandleForces(
+    record: IExportRecord,
+    handleForces: Record<number, IExportHandleForces>,
+): IExportHandleForces | undefined {
+    if (record.strokeKey !== undefined) {
+        if (record.forceCurveStatus === "legacy") {
+            return handleForces[record.strokeCount];
+        }
+
+        if (record.forceCurveStatus !== "complete" || record.forceCurve === undefined) {
+            return undefined;
+        }
+
+        const samples = record.forceCurve.samples;
+        const peakForce = samples.reduce(
+            (maximum: number, sample: IForceCurvePoint): number => Math.max(maximum, sample.force),
+            0,
+        );
+        const peakForceIndex = samples.findIndex(
+            (sample: IForceCurvePoint): boolean => sample.force === peakForce,
+        );
+        const peakDistance = samples[peakForceIndex]?.distance ?? 0;
+        const driveLength = record.forceCurve.driveLength;
+        const peakForcePositionNorm =
+            Number.isFinite(driveLength) && driveLength > 0 && Number.isFinite(peakDistance)
+                ? (peakDistance / driveLength) * 100
+                : 0;
+
+        return {
+            peakForce,
+            peakForcePositionNorm,
+            driveLength,
+            handleForces: samples.map((sample: IForceCurvePoint): number => sample.force),
+            forceCurve: samples,
+        };
+    }
+
+    return handleForces[record.strokeCount];
+}
+
+export function computeMaxCurvePointCount(
+    handleForces: Record<number, IExportHandleForces>,
+    records: Array<IExportRecord> = [],
+): number {
     let max = 0;
     for (const handleForce of Object.values(handleForces)) {
         max = Math.max(max, handleForce.handleForces.length);
+    }
+    for (const record of records) {
+        if (record.forceCurveStatus === "complete" && record.forceCurve !== undefined) {
+            max = Math.max(max, record.forceCurve.samples.length);
+        }
     }
 
     return Math.min(127, max);
@@ -296,7 +345,7 @@ export function computeStats(
             maxCadence = Math.max(maxCadence, record.strokeRate);
         }
 
-        if (record.avgStrokePower > 0) {
+        if (record.isExtendedMetricsPending !== true && record.avgStrokePower > 0) {
             powerSum += record.avgStrokePower;
             powerCount++;
             maxPower = Math.max(maxPower, record.avgStrokePower);
@@ -319,7 +368,7 @@ export function computeStats(
             strokeDistanceCount++;
         }
 
-        if (record.dragFactor > 0) {
+        if (record.isExtendedMetricsPending !== true && record.dragFactor > 0) {
             dragFactorSum += record.dragFactor;
             dragFactorCount++;
         }
@@ -342,8 +391,23 @@ export function computeStats(
         totalCycles: lastRecord.strokeCount - firstRecord.strokeCount,
         totalWork: Math.round(lastRecord.totalWork - firstRecord.totalWork),
         avgDragFactor: dragFactorCount > 0 ? Math.round(dragFactorSum / dragFactorCount) : 0,
-        force: computeForceStats(handleForces),
+        force: computeForceStatsForRecords(records, handleForces),
     };
+}
+
+function computeForceStatsForRecords(
+    records: Array<IExportRecord>,
+    handleForces: Record<number, IExportHandleForces>,
+): { avg: number; max: number } | undefined {
+    const forceRows = new Map<string, IExportHandleForces>();
+    for (const record of records) {
+        const force = getRecordHandleForces(record, handleForces);
+        if (force !== undefined) {
+            forceRows.set(record.strokeKey ?? `legacy:${record.strokeCount}`, force);
+        }
+    }
+
+    return computeForceStats(Object.fromEntries(forceRows));
 }
 
 export function computeMeanForce(forces: Array<number>): number {
@@ -411,6 +475,7 @@ export function buildLapSegments(
     laps: Array<ILapExport>,
     sessionStartMs: number,
     allHandleForces: Record<number, IExportHandleForces> = {},
+    finishAtMs?: number,
 ): Array<LapSegment> {
     const segments: Array<LapSegment> = laps.map((marker: ILapExport, index: number): LapSegment => {
         const isFirst = index === 0;
@@ -444,6 +509,7 @@ export function buildLapSegments(
         endTimeMs: Math.max(
             records[records.length - 1].timeStamp.getTime(),
             lastMarker?.timeStamp ?? sessionStartMs,
+            finishAtMs ?? sessionStartMs,
         ),
     });
 

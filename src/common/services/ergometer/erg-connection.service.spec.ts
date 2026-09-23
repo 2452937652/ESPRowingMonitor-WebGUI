@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, Mock, vi } from "vitest";
 import {
     BATTERY_LEVEL_CHARACTERISTIC,
     BATTERY_LEVEL_SERVICE,
+    COMPLETED_STROKE_METRICS_V2_CHARACTERISTIC,
+    COMPLETED_STROKE_METRICS_V2_SERVICE,
     CYCLING_POWER_CHARACTERISTIC,
     CYCLING_POWER_SERVICE,
     CYCLING_SPEED_AND_CADENCE_CHARACTERISTIC,
@@ -14,6 +16,8 @@ import {
     EXTENDED_METRICS_SERVICE,
     FITNESS_MACHINE_SERVICE,
     HANDLE_FORCES_CHARACTERISTIC,
+    PHYSICAL_FORCE_CURVE_V2_CHARACTERISTIC,
+    PHYSICAL_FORCE_CURVE_V2_SERVICE,
     ROWER_DATA_CHARACTERISTIC,
     SETTINGS_CHARACTERISTIC,
     SETTINGS_SERVICE,
@@ -46,6 +50,8 @@ describe("ErgConnectionService", (): void => {
     let mockExtendedCharacteristic: BluetoothRemoteGATTCharacteristic;
     let mockHandleForcesCharacteristic: BluetoothRemoteGATTCharacteristic;
     let mockDeltaTimesCharacteristic: BluetoothRemoteGATTCharacteristic;
+    let mockPhysicalForceCurveV2Characteristic: BluetoothRemoteGATTCharacteristic;
+    let mockCompletedStrokeMetricsV2Characteristic: BluetoothRemoteGATTCharacteristic;
     let mockSettingsCharacteristic: BluetoothRemoteGATTCharacteristic;
     let mockStrokeSettingsCharacteristic: BluetoothRemoteGATTCharacteristic;
     let mockBatteryService: Pick<BluetoothRemoteGATTService, "getCharacteristic">;
@@ -53,6 +59,8 @@ describe("ErgConnectionService", (): void => {
     let mockCscService: Pick<BluetoothRemoteGATTService, "getCharacteristic">;
     let mockFitnessService: Pick<BluetoothRemoteGATTService, "getCharacteristic">;
     let mockExtendedService: Pick<BluetoothRemoteGATTService, "getCharacteristic">;
+    let mockPhysicalForceCurveV2Service: Pick<BluetoothRemoteGATTService, "getCharacteristic">;
+    let mockCompletedStrokeMetricsV2Service: Pick<BluetoothRemoteGATTService, "getCharacteristic">;
     let mockSettingsService: Pick<BluetoothRemoteGATTService, "getCharacteristic">;
     let connectionSpies: {
         connectToMeasurement: Mock;
@@ -62,6 +70,8 @@ describe("ErgConnectionService", (): void => {
         connectToSettings: Mock;
         connectToStrokeSettings: Mock;
         connectToBattery: Mock;
+        connectToPhysicalForceCurveV2: Mock;
+        connectToCompletedStrokeMetricsV2: Mock;
     };
 
     const setupConnectionSpies = (): typeof connectionSpies => {
@@ -77,6 +87,12 @@ describe("ErgConnectionService", (): void => {
                 .spyOn(ergConnectionService, "connectToStrokeSettings")
                 .mockResolvedValue(),
             connectToBattery: vi.spyOn(ergConnectionService, "connectToBattery").mockResolvedValue(),
+            connectToPhysicalForceCurveV2: vi
+                .spyOn(ergConnectionService, "connectToPhysicalForceCurveV2")
+                .mockResolvedValue(),
+            connectToCompletedStrokeMetricsV2: vi
+                .spyOn(ergConnectionService, "connectToCompletedStrokeMetricsV2")
+                .mockResolvedValue(),
         };
     };
 
@@ -105,6 +121,8 @@ describe("ErgConnectionService", (): void => {
         mockExtendedCharacteristic = createMockCharacteristic(mockBluetoothDevice);
         mockHandleForcesCharacteristic = createMockCharacteristic(mockBluetoothDevice);
         mockDeltaTimesCharacteristic = createMockCharacteristic(mockBluetoothDevice);
+        mockPhysicalForceCurveV2Characteristic = createMockCharacteristic(mockBluetoothDevice);
+        mockCompletedStrokeMetricsV2Characteristic = createMockCharacteristic(mockBluetoothDevice);
         mockSettingsCharacteristic = createMockCharacteristic(mockBluetoothDevice);
         mockStrokeSettingsCharacteristic = createMockCharacteristic(mockBluetoothDevice);
 
@@ -121,6 +139,12 @@ describe("ErgConnectionService", (): void => {
             getCharacteristic: vi.fn(),
         };
         mockExtendedService = {
+            getCharacteristic: vi.fn(),
+        };
+        mockPhysicalForceCurveV2Service = {
+            getCharacteristic: vi.fn(),
+        };
+        mockCompletedStrokeMetricsV2Service = {
             getCharacteristic: vi.fn(),
         };
         mockSettingsService = {
@@ -141,6 +165,10 @@ describe("ErgConnectionService", (): void => {
                     return Promise.resolve(mockFitnessService as BluetoothRemoteGATTService);
                 if (service === EXTENDED_METRICS_SERVICE)
                     return Promise.resolve(mockExtendedService as BluetoothRemoteGATTService);
+                if (service === PHYSICAL_FORCE_CURVE_V2_SERVICE)
+                    return Promise.resolve(mockPhysicalForceCurveV2Service as BluetoothRemoteGATTService);
+                if (service === COMPLETED_STROKE_METRICS_V2_SERVICE)
+                    return Promise.resolve(mockCompletedStrokeMetricsV2Service as BluetoothRemoteGATTService);
                 if (service === SETTINGS_SERVICE)
                     return Promise.resolve(mockSettingsService as BluetoothRemoteGATTService);
 
@@ -188,6 +216,24 @@ describe("ErgConnectionService", (): void => {
                 if (char === HANDLE_FORCES_CHARACTERISTIC)
                     return Promise.resolve(mockHandleForcesCharacteristic);
                 if (char === DELTA_TIMES_CHARACTERISTIC) return Promise.resolve(mockDeltaTimesCharacteristic);
+
+                return Promise.reject(new Error(`Characteristic ${char} not found`));
+            },
+        );
+
+        vi.mocked(mockPhysicalForceCurveV2Service.getCharacteristic).mockImplementation(
+            (char: BluetoothCharacteristicUUID): Promise<BluetoothRemoteGATTCharacteristic> => {
+                if (char === PHYSICAL_FORCE_CURVE_V2_CHARACTERISTIC)
+                    return Promise.resolve(mockPhysicalForceCurveV2Characteristic);
+
+                return Promise.reject(new Error(`Characteristic ${char} not found`));
+            },
+        );
+
+        vi.mocked(mockCompletedStrokeMetricsV2Service.getCharacteristic).mockImplementation(
+            (char: BluetoothCharacteristicUUID): Promise<BluetoothRemoteGATTCharacteristic> => {
+                if (char === COMPLETED_STROKE_METRICS_V2_CHARACTERISTIC)
+                    return Promise.resolve(mockCompletedStrokeMetricsV2Characteristic);
 
                 return Promise.reject(new Error(`Characteristic ${char} not found`));
             },
@@ -298,6 +344,22 @@ describe("ErgConnectionService", (): void => {
             expect(connectToMeasurementSpy).toHaveBeenCalled();
         });
 
+        it("should request the V2 services as optional services", async (): Promise<void> => {
+            const bluetooth: Bluetooth = navigator.bluetooth;
+            const requestDeviceSpy = vi.spyOn(bluetooth, "requestDevice");
+
+            await ergConnectionService.discover();
+
+            expect(requestDeviceSpy).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    optionalServices: expect.arrayContaining([
+                        PHYSICAL_FORCE_CURVE_V2_SERVICE,
+                        COMPLETED_STROKE_METRICS_V2_SERVICE,
+                    ]),
+                }),
+            );
+        });
+
         it("should start the connect flow on successful devce request ", async (): Promise<void> => {
             const connectToMeasurementSpy = connectionSpies.connectToMeasurement;
 
@@ -391,13 +453,19 @@ describe("ErgConnectionService", (): void => {
             connectionSpies.connectToBattery.mockImplementation(async (): Promise<void> => {
                 connectionOrder.push("battery");
             });
+            connectionSpies.connectToPhysicalForceCurveV2.mockImplementation(async (): Promise<void> => {
+                connectionOrder.push("physicalForceCurveV2");
+            });
+            connectionSpies.connectToCompletedStrokeMetricsV2.mockImplementation(async (): Promise<void> => {
+                connectionOrder.push("completedStrokeMetricsV2");
+            });
         });
 
         describe("on successful connection", (): void => {
             it("should call all connectTo* methods", async (): Promise<void> => {
                 await ergConnectionService.discover();
 
-                expect(connectionOrder).toHaveLength(7);
+                expect(connectionOrder).toHaveLength(9);
                 expect(connectionSpies.connectToMeasurement).toHaveBeenCalled();
                 expect(connectionSpies.connectToExtended).toHaveBeenCalled();
                 expect(connectionSpies.connectToHandleForces).toHaveBeenCalled();
@@ -405,6 +473,8 @@ describe("ErgConnectionService", (): void => {
                 expect(connectionSpies.connectToSettings).toHaveBeenCalled();
                 expect(connectionSpies.connectToStrokeSettings).toHaveBeenCalled();
                 expect(connectionSpies.connectToBattery).toHaveBeenCalled();
+                expect(connectionSpies.connectToPhysicalForceCurveV2).toHaveBeenCalled();
+                expect(connectionSpies.connectToCompletedStrokeMetricsV2).toHaveBeenCalled();
             });
 
             it("should call connectTo* methods in correct order", async (): Promise<void> => {
@@ -418,6 +488,8 @@ describe("ErgConnectionService", (): void => {
                     "settings",
                     "strokeSettings",
                     "battery",
+                    "physicalForceCurveV2",
+                    "completedStrokeMetricsV2",
                 ]);
             });
 
@@ -452,6 +524,42 @@ describe("ErgConnectionService", (): void => {
                 await ergConnectionService.discover();
 
                 await expect(disconnectReady).resolves.not.toThrow();
+            });
+
+            it("should stay connected when an older device lacks both optional V2 services", async (): Promise<void> => {
+                vi.useFakeTimers();
+                const getPrimaryService = vi.mocked(mockBluetoothDevice.gatt!.getPrimaryService);
+                const originalGetPrimaryService = getPrimaryService.getMockImplementation();
+                const infoSpy = vi.spyOn(console, "info").mockImplementation((): void => undefined);
+                connectionSpies.connectToPhysicalForceCurveV2.mockRestore();
+                connectionSpies.connectToCompletedStrokeMetricsV2.mockRestore();
+                getPrimaryService.mockImplementation(
+                    (service: BluetoothServiceUUID): Promise<BluetoothRemoteGATTService> => {
+                        if (
+                            service === PHYSICAL_FORCE_CURVE_V2_SERVICE ||
+                            service === COMPLETED_STROKE_METRICS_V2_SERVICE
+                        ) {
+                            return Promise.reject(new Error("Optional service not present"));
+                        }
+
+                        return originalGetPrimaryService!(service);
+                    },
+                );
+
+                try {
+                    const discovery = ergConnectionService.discover();
+                    await vi.runAllTimersAsync();
+                    await discovery;
+
+                    expect(localStatusEvents[localStatusEvents.length - 1].status).toBe("connected");
+                    expect(ergConnectionService.readPhysicalForceCurveV2Characteristic()).toBeUndefined();
+                    expect(ergConnectionService.readCompletedStrokeMetricsV2Characteristic()).toBeUndefined();
+                    expect(connectionSpies.connectToMeasurement).toHaveBeenCalled();
+                    expect(infoSpy).toHaveBeenCalledTimes(2);
+                } finally {
+                    infoSpy.mockRestore();
+                    vi.useRealTimers();
+                }
             });
         });
 
@@ -551,6 +659,8 @@ describe("ErgConnectionService", (): void => {
             connectionSpies.connectToSettings.mockReset();
             connectionSpies.connectToStrokeSettings.mockReset();
             connectionSpies.connectToMeasurement.mockReset();
+            connectionSpies.connectToPhysicalForceCurveV2.mockReset();
+            connectionSpies.connectToCompletedStrokeMetricsV2.mockReset();
 
             // eslint-disable-next-line no-underscore-dangle
             (
@@ -729,6 +839,66 @@ describe("ErgConnectionService", (): void => {
                     "Error connecting to Delta Times",
                     "Dismiss",
                 );
+            });
+        });
+
+        describe("connectToPhysicalForceCurveV2", (): void => {
+            it("should connect successfully when the optional service is available", async (): Promise<void> => {
+                const result = ergConnectionService.connectToPhysicalForceCurveV2(mockGattServer);
+
+                await vi.runAllTimersAsync();
+
+                expect(await result).toBe(mockPhysicalForceCurveV2Characteristic);
+                expect(ergConnectionService.readPhysicalForceCurveV2Characteristic()).toBe(
+                    mockPhysicalForceCurveV2Characteristic,
+                );
+            });
+
+            it("should continue without a snackbar when the optional service is absent", async (): Promise<void> => {
+                connectedSpy.mockReturnValue(true);
+                vi.mocked(mockGattServer.getPrimaryService).mockRejectedValue(
+                    new Error("Service not present"),
+                );
+                const infoSpy = vi.spyOn(console, "info").mockImplementation((): void => undefined);
+                const result = ergConnectionService.connectToPhysicalForceCurveV2(mockGattServer);
+
+                await vi.runAllTimersAsync();
+
+                expect(await result).toBeUndefined();
+                expect(ergConnectionService.readPhysicalForceCurveV2Characteristic()).toBeUndefined();
+                expect(matSnackBarSpy.open).not.toHaveBeenCalled();
+                expect(infoSpy).toHaveBeenCalledOnce();
+                infoSpy.mockRestore();
+            });
+        });
+
+        describe("connectToCompletedStrokeMetricsV2", (): void => {
+            it("should connect successfully when the optional service is available", async (): Promise<void> => {
+                const result = ergConnectionService.connectToCompletedStrokeMetricsV2(mockGattServer);
+
+                await vi.runAllTimersAsync();
+
+                expect(await result).toBe(mockCompletedStrokeMetricsV2Characteristic);
+                expect(ergConnectionService.readCompletedStrokeMetricsV2Characteristic()).toBe(
+                    mockCompletedStrokeMetricsV2Characteristic,
+                );
+            });
+
+            it("should continue without a snackbar when the optional service is absent", async (): Promise<void> => {
+                connectedSpy.mockReturnValue(true);
+                vi.mocked(mockGattServer.getPrimaryService).mockRejectedValue(
+                    new Error("Service not present"),
+                );
+                const infoSpy = vi.spyOn(console, "info").mockImplementation((): void => undefined);
+                const result = ergConnectionService.connectToCompletedStrokeMetricsV2(mockGattServer);
+
+                await vi.runAllTimersAsync();
+
+                expect(await result).toBeUndefined();
+                expect(ergConnectionService.readCompletedStrokeMetricsV2Characteristic()).toBeUndefined();
+                expect(matSnackBarSpy.open).not.toHaveBeenCalled();
+                expect(infoSpy).toHaveBeenCalledOnce();
+                infoSpy.mockRestore();
             });
         });
 

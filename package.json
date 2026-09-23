@@ -15,7 +15,6 @@
         "watch": "ng build --watch --configuration development",
         "test": "npm run test:tools && ng test --watch=false",
         "test:tools": "vitest run tools/",
-        "test:force-curve": "node --test tools/regression/force-curve.regression.cjs",
         "generate-version": "npm run build:tools && node out-tsc/tools/auto-version.js",
         "fetch-profiles": "npm run build:tools && node out-tsc/tools/fetch-profiles.js"
     },
@@ -74,6 +73,7 @@
         "eslint-plugin-rxjs-angular-updated": "^1.0.50",
         "eslint-plugin-unicorn": "^65.0.1",
         "eslint-plugin-unused-imports": "^4.4.1",
+        "fake-indexeddb": "^6.2.5",
         "globals": "^17.4.0",
         "jsdom": "^29.1.1",
         "prettier": "^3.8.1",

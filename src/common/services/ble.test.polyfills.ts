@@ -1,15 +1,9 @@
 import { vi } from "vitest";
 
 export function stubBluetooth(): void {
-    if ("bluetooth" in navigator === false) {
-        Object.defineProperty(navigator, "bluetooth", {
-            configurable: true,
-            value: {} as Bluetooth,
-            writable: true,
-        });
-    }
+    if (Object.hasOwn(navigator, "bluetooth") === false) {
+        navigator.bluetooth = {} as Bluetooth;
 
-    if (typeof BluetoothUUID === "undefined") {
         vi.stubGlobal("BluetoothUUID", {
             getCharacteristic: (uuid: BluetoothCharacteristicUUID): string => uuid.toString(),
         });

@@ -44,19 +44,20 @@ import {
 import { DashboardTileDefinition, PlacedDashboardTile } from "./dashboard.interfaces";
 import { SettingsBarComponent } from "./settings-bar/settings-bar.component";
 
+type NumericMetricKey = {
+    [Key in keyof ICalculatedMetrics]-?: NonNullable<ICalculatedMetrics[Key]> extends number ? Key : never;
+}[keyof ICalculatedMetrics];
+
 type AverageableMetricKey = Exclude<
-    keyof ICalculatedMetrics,
+    NumericMetricKey,
     | "distance"
     | "strokeCount"
     | "handleForces"
-    | "forceCurve"
-    | "forceCurveStrokeId"
-    | "forceCurveStatus"
-    | "displayForceCurve"
-    | "isDriveLengthAnomalous"
-    | "isExtendedMetricsPending"
     | "totalWork"
     | "powerBalance"
+    | "sourceEpoch"
+    | "sourceStrokeId"
+    | "forceCurveStrokeId"
 >;
 
 const PERFORMANCE_METRIC_KEYS: ReadonlyArray<AverageableMetricKey> = [
@@ -433,7 +434,7 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
                   };
         }
 
-        // A completed stroke can receive its curve or extended metrics after
+        // a completed stroke can receive its curve or extended metrics after
         // the first record. Replace the last sample in that case; appending it
         // would turn a single physical stroke into several trend points.
         if (current.strokeCount === state.lastStrokeCount) {
@@ -455,7 +456,9 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
                 totalWork: current.totalWork,
             };
 
-            for (const [key, value] of Object.entries(values) as Array<[TrendMetricKey, number | undefined]>) {
+            for (const [key, value] of Object.entries(values) as Array<
+                [TrendMetricKey, number | undefined]
+            >) {
                 if (value === undefined || !Number.isFinite(value)) {
                     continue;
                 }

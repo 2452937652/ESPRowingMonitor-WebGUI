@@ -1,10 +1,10 @@
 import { Injectable } from "@angular/core";
-import { Dexie, IndexableTypePart, liveQuery } from "dexie";
+import { Dexie, IndexableTypePart, liveQuery, Table } from "dexie";
 import { exportDB, ExportProgress, importInto, peakImportFile } from "dexie-export-import";
 import { ImportProgress } from "dexie-export-import/dist/import";
 import { filter, from, Observable } from "rxjs";
 
-import { ISessionData, ISessionSummary } from "../common.interfaces";
+import { IForceCurvePoint, ISessionData, ISessionSummary } from "../common.interfaces";
 import {
     IConnectedDeviceEntity,
     IDeltaTimesEntity,
@@ -15,19 +15,27 @@ import {
     ILapEntity,
     ILapExport,
     IMetricsEntity,
+    ISessionMetadataEntity,
+    IStrokePersistenceIdentity,
     LapType,
 } from "../database.interfaces";
 import { appDB } from "../utils/app-database";
 import { createSessionFitFile } from "../utils/fit-file/fit-file";
 import { downloadFiles } from "../utils/utility.functions";
 
+interface IStrokePersistenceContext {
+    sessionId: number;
+    timeStamp: number;
+    strokeKey: string;
+    hasV2Identity: boolean;
+}
+
 @Injectable({
     providedIn: "root",
 })
 export class DataRecorderService {
     private _sessionId: number = Date.now();
-    /** Serializes writes so the legacy timestamp primary key cannot collide under rapid BLE updates. */
-    private sessionWriteTail: Promise<void> = Promise.resolve();
+    private lastAllocatedTimestamp: number = 0;
 
     get currentSessionId(): number {
         return this._sessionId;
@@ -39,58 +47,38 @@ export class DataRecorderService {
         return appDB.connectedDevice.put({ deviceName, sessionId });
     }
 
-    addLap(strokeIndex: number, type: LapType, isPause: boolean = false): Promise<number> {
-        return appDB.laps.add({
-            sessionId: this.currentSessionId,
-            timeStamp: Date.now(),
-            strokeIndex,
-            type,
-            isPause,
-        });
+    async addLap(strokeIndex: number, type: LapType, isPause: boolean = false): Promise<number> {
+        const timeStamp = await this.allocateTimestamp(appDB.laps);
+
+        return appDB.laps.add({ sessionId: this.currentSessionId, timeStamp, strokeIndex, type, isPause });
     }
 
-    addDeltaTimes(deltaTimes: Array<number>): Promise<number> {
+    async addDeltaTimes(deltaTimes: Array<number>): Promise<number> {
         const sessionId = this.currentSessionId;
+        const timeStamp = await this.allocateTimestamp(appDB.deltaTimes);
 
         return appDB.deltaTimes.put({
             sessionId,
-            timeStamp: Date.now(),
+            timeStamp,
             deltaTimes,
         });
     }
 
     addSessionData(rowingData: ISessionData): Promise<void> {
-        const write = this.sessionWriteTail.then((): Promise<void> => this.upsertSessionData(rowingData));
-        // A rejected write must be reported to its caller but must not poison
-        // later strokes in the queue.
-        this.sessionWriteTail = write.catch((): void => undefined);
-
-        return write;
-    }
-
-    private async upsertSessionData(rowingData: ISessionData): Promise<void> {
         const sessionId: number = this.currentSessionId;
 
-        await appDB.transaction("rw", appDB.sessionData, appDB.handleForces, async (): Promise<void> => {
-            const [sessionMetrics, existingForce] = await Promise.all([
-                appDB.sessionData.where({ sessionId }).toArray(),
-                appDB.handleForces.where({ sessionId, strokeId: rowingData.strokeCount }).last(),
-            ]);
-            const existingMetric = sessionMetrics.find(
-                (metric: IMetricsEntity): boolean => metric.strokeCount === rowingData.strokeCount,
-            );
-            const latestMetric = sessionMetrics.reduce(
-                (latest: IMetricsEntity | undefined, metric: IMetricsEntity): IMetricsEntity =>
-                    latest === undefined || metric.timeStamp > latest.timeStamp ? metric : latest,
-                undefined,
-            );
-            const timeStamp =
-                existingMetric?.timeStamp ?? Math.max(Date.now(), (latestMetric?.timeStamp ?? 0) + 1);
+        return appDB.transaction("rw", appDB.sessionData, appDB.handleForces, async (): Promise<void> => {
+            const metricsTimeStamp = await this.allocateTimestamp(appDB.sessionData);
+            const existingHandleForces = await appDB.handleForces
+                .where({ sessionId, strokeId: rowingData.strokeCount })
+                .last();
+            const handleForcesTimeStamp =
+                existingHandleForces?.timeStamp ?? (await this.allocateTimestamp(appDB.handleForces));
 
             await Promise.all([
-                appDB.sessionData.put({
+                appDB.sessionData.add({
                     sessionId,
-                    timeStamp,
+                    timeStamp: metricsTimeStamp,
                     avgStrokePower: rowingData.avgStrokePower,
                     distance: rowingData.distance,
                     distPerStroke: rowingData.distPerStroke,
@@ -102,20 +90,47 @@ export class DataRecorderService {
                     strokeRate: rowingData.strokeRate,
                     elapsedTime: rowingData.elapsedTime,
                     heartRate: rowingData.heartRate,
-                    isExtendedMetricsPending: rowingData.isExtendedMetricsPending,
                 }),
                 appDB.handleForces.put({
-                    timeStamp: existingForce?.timeStamp ?? timeStamp,
+                    timeStamp: handleForcesTimeStamp,
                     sessionId,
                     strokeId: rowingData.strokeCount,
                     handleForces: rowingData.handleForces,
                     driveLength: rowingData.driveLength,
-                    forceCurve: rowingData.forceCurve,
-                    forceCurveStatus: rowingData.forceCurveStatus,
-                    isDriveLengthAnomalous: rowingData.isDriveLengthAnomalous,
                 }),
             ]);
         });
+    }
+
+    /**
+     * Persist one logical stroke. Later recovery or curve notifications update the
+     * same row; completed recovery metrics and force curves are sticky once stored.
+     */
+    upsertSessionStroke(rowingData: ISessionData, identity: IStrokePersistenceIdentity): Promise<number> {
+        const sessionId = this.currentSessionId;
+        const hasV2Identity = identity.sourceEpoch !== undefined && identity.sourceStrokeId !== undefined;
+        const strokeKey = this.getStrokeKey(rowingData, identity);
+
+        return appDB.transaction("rw", appDB.sessionData, appDB.handleForces, async (): Promise<number> => {
+            const existing = await appDB.sessionData
+                .where("[sessionId+strokeKey]")
+                .equals([sessionId, strokeKey])
+                .first();
+            const timeStamp = existing?.timeStamp ?? (await this.allocateTimestamp(appDB.sessionData));
+            const context: IStrokePersistenceContext = { sessionId, timeStamp, strokeKey, hasV2Identity };
+            const entity = this.mergeStrokeEntity(rowingData, identity, existing, context);
+            await appDB.sessionData.put(entity);
+            await this.upsertLegacyHandleForces(rowingData, identity, sessionId, hasV2Identity);
+
+            return timeStamp;
+        });
+    }
+
+    /** Record the explicit stop boundary for v5 summaries and file exports. */
+    finishSession(sessionId: number, finishAt: number, elapsedTime: number): Promise<number> {
+        const metadata: ISessionMetadataEntity = { sessionId, finishAt, elapsedTime };
+
+        return appDB.sessionMetadata.put(metadata);
     }
 
     async hasSessions(): Promise<boolean> {
@@ -131,6 +146,7 @@ export class DataRecorderService {
                 appDB.handleForces,
                 appDB.connectedDevice,
                 appDB.laps,
+                appDB.sessionMetadata,
                 appDB.sessionUploads,
             ],
             async (): Promise<void> => {
@@ -140,6 +156,7 @@ export class DataRecorderService {
                     appDB.handleForces.where({ sessionId }).delete(),
                     appDB.connectedDevice.where({ sessionId }).delete(),
                     appDB.laps.where({ sessionId }).delete(),
+                    appDB.sessionMetadata.delete(sessionId),
                     appDB.sessionUploads.where({ sessionId }).delete(),
                 ]);
             },
@@ -220,6 +237,7 @@ export class DataRecorderService {
                     "r",
                     appDB.sessionData,
                     appDB.connectedDevice,
+                    appDB.sessionMetadata,
                     async (): Promise<Array<ISessionSummary | undefined>> => {
                         const uniqueSessionIds = [];
 
@@ -238,14 +256,16 @@ export class DataRecorderService {
                                 async (
                                     sessionId: IndexableTypePart,
                                 ): Promise<ISessionSummary | undefined> => {
-                                    const [connectedDevice, first, last]: [
+                                    const [connectedDevice, first, last, metadata]: [
                                         IConnectedDeviceEntity | undefined,
                                         IMetricsEntity | undefined,
                                         IMetricsEntity | undefined,
+                                        ISessionMetadataEntity | undefined,
                                     ] = await Promise.all([
                                         appDB.connectedDevice.where({ sessionId }).last(),
                                         appDB.sessionData.where({ sessionId }).first(),
                                         appDB.sessionData.where({ sessionId }).last(),
+                                        appDB.sessionMetadata.get(Number(sessionId)),
                                     ]);
 
                                     if (first === undefined || last === undefined) {
@@ -256,8 +276,8 @@ export class DataRecorderService {
                                         sessionId: last.sessionId,
                                         deviceName: connectedDevice?.deviceName,
                                         startTime: first.timeStamp - first.driveDuration / 1000,
-                                        finishTime: last.timeStamp,
-                                        elapsedTime: last.elapsedTime,
+                                        finishTime: metadata?.finishAt ?? last.timeStamp,
+                                        elapsedTime: metadata?.elapsedTime ?? last.elapsedTime,
                                         distance: last.distance,
                                         strokeCount: last.strokeCount,
                                     };
@@ -333,52 +353,14 @@ export class DataRecorderService {
         ].join(",");
 
         let csvBody = `${headers}\n`;
-        let previousStroke: IExportRecord | undefined;
+        let previousStroke: IExportRecord | undefined = records[0];
 
         for (const data of records) {
-            const previous = previousStroke ?? data;
+            if (this.isDuplicateLogicalStroke(previousStroke, data)) {
+                continue;
+            }
 
-            const calculatedSpeed =
-                previous.distance === 0
-                    ? data.elapsedTime > 0
-                        ? data.distance / 100 / data.elapsedTime
-                        : 0
-                    : (data.strokeRate / 60) * data.distPerStroke;
-
-            const handleForce: IExportHandleForces = handleForces[data.strokeCount] ?? {
-                handleForces: [],
-                driveLength: 0,
-                peakForce: 0,
-                peakForcePositionNorm: 0,
-            };
-            const handleForcesFormatted = `"${handleForce.handleForces.map((force: number): string => force.toFixed(2)).join(",")}"`;
-            const heartRateValue =
-                data.heartRate?.heartRate !== null && data.heartRate?.heartRate !== undefined
-                    ? data.heartRate.heartRate.toString()
-                    : "NaN";
-
-            const isCalculatedSpeedNaN = isNaN(calculatedSpeed);
-
-            const row = [
-                data.strokeCount.toString(),
-                data.elapsedTime.toFixed(2),
-                (data.distance / 100).toString(),
-                (isCalculatedSpeedNaN || calculatedSpeed === 0 ? 0 : 500 / calculatedSpeed).toFixed(2),
-                (isCalculatedSpeedNaN ? 0 : calculatedSpeed * 3.6).toFixed(2),
-                data.avgStrokePower.toString(),
-                Math.round(data.strokeRate).toString(),
-                data.distPerStroke.toString(),
-                data.driveDuration.toFixed(2),
-                data.recoveryDuration.toFixed(2),
-                handleForce.driveLength.toFixed(2),
-                heartRateValue,
-                data.dragFactor.toString(),
-                handleForce.peakForce.toFixed(2),
-                handleForce.peakForcePositionNorm.toFixed(1),
-                handleForcesFormatted,
-            ].join(",");
-
-            csvBody += `${row}\n`;
+            csvBody += `${this.formatSessionCsvRow(data, previousStroke, handleForces)}\n`;
             previousStroke = data;
         }
 
@@ -407,34 +389,26 @@ export class DataRecorderService {
             appDB.handleForces,
             appDB.connectedDevice,
             appDB.laps,
+            appDB.sessionMetadata,
             async (): Promise<IExportSession> => {
-                const [metricsEntities, handleForcesEntities, connectedDevice, lapEntities]: [
+                const [metricsEntities, handleForcesEntities, connectedDevice, lapEntities, metadata]: [
                     Array<IMetricsEntity>,
                     Array<IHandleForcesEntity>,
                     { sessionId: number; deviceName: string } | undefined,
                     Array<ILapEntity>,
+                    ISessionMetadataEntity | undefined,
                 ] = await Promise.all([
                     appDB.sessionData.where({ sessionId }).toArray(),
                     appDB.handleForces.where({ sessionId }).toArray(),
                     appDB.connectedDevice.where({ sessionId }).last(),
                     appDB.laps.where({ sessionId }).sortBy("timeStamp"),
+                    appDB.sessionMetadata.get(sessionId),
                 ]);
 
                 const records: Array<IExportRecord> = [];
                 let totalWork = 0;
 
-                // Older app versions wrote periodic snapshots as new records.
-                // Keep the newest snapshot for each stroke so importing old
-                // data cannot double-count work, and new late-arriving curve
-                // updates replace their owning stroke instead of adding one.
-                const newestMetricsByStroke = new Map<number, IMetricsEntity>();
-                for (const metric of metricsEntities.sort((a, b): number => a.timeStamp - b.timeStamp)) {
-                    newestMetricsByStroke.set(metric.strokeCount, metric);
-                }
-
-                for (const metric of [...newestMetricsByStroke.values()].sort(
-                    (a, b): number => a.timeStamp - b.timeStamp,
-                )) {
+                for (const metric of metricsEntities) {
                     if (metric.isExtendedMetricsPending !== true) {
                         totalWork += metric.avgStrokePower * (metric.driveDuration + metric.recoveryDuration);
                     }
@@ -450,9 +424,14 @@ export class DataRecorderService {
                         strokeRate: metric.strokeRate,
                         elapsedTime: metric.elapsedTime,
                         heartRate: metric.heartRate,
-                        isExtendedMetricsPending: metric.isExtendedMetricsPending,
                         timeStamp: new Date(metric.timeStamp),
                         totalWork,
+                        strokeKey: metric.strokeKey,
+                        sourceEpoch: metric.sourceEpoch,
+                        sourceStrokeId: metric.sourceStrokeId,
+                        forceCurve: metric.forceCurve,
+                        forceCurveStatus: metric.forceCurveStatus,
+                        isExtendedMetricsPending: metric.isExtendedMetricsPending,
                     });
                 }
 
@@ -474,17 +453,25 @@ export class DataRecorderService {
                     handleForces[entity.strokeId] = {
                         peakForce,
                         peakForcePositionNorm:
-                            entity.forceCurve !== undefined && entity.driveLength > 0
-                                ? ((entity.forceCurve[peakForceIndex]?.distance ?? 0) / entity.driveLength) * 100
-                                : entity.handleForces.length > 1
+                            entity.handleForces.length > 1
                                 ? (peakForceIndex / (entity.handleForces.length - 1)) * 100
                                 : 0,
                         driveLength: entity.driveLength,
                         handleForces: entity.handleForces,
                         forceCurve: entity.forceCurve,
                         forceCurveStatus: entity.forceCurveStatus,
-                        isDriveLengthAnomalous: entity.isDriveLengthAnomalous,
                     };
+                }
+
+                for (const record of records) {
+                    if (record.strokeKey === undefined || record.forceCurveStatus !== "complete") {
+                        continue;
+                    }
+
+                    const curve = this.getExportHandleForce(record, handleForces);
+                    if (curve !== undefined) {
+                        handleForces[record.strokeCount] = curve;
+                    }
                 }
 
                 return {
@@ -498,8 +485,274 @@ export class DataRecorderService {
                         type: lap.type,
                         isPause: lap.isPause,
                     })),
+                    finishAt: metadata?.finishAt,
+                    elapsedTime: metadata?.elapsedTime,
                 };
             },
         );
+    }
+
+    private mergeStrokeEntity(
+        rowingData: ISessionData,
+        identity: IStrokePersistenceIdentity,
+        existing: IMetricsEntity | undefined,
+        context: IStrokePersistenceContext,
+    ): IMetricsEntity {
+        return {
+            sessionId: context.sessionId,
+            timeStamp: context.timeStamp,
+            strokeKey: context.strokeKey,
+            sourceEpoch: context.hasV2Identity ? identity.sourceEpoch : undefined,
+            sourceStrokeId: context.hasV2Identity ? identity.sourceStrokeId : undefined,
+            distance: rowingData.distance,
+            distPerStroke: rowingData.distPerStroke,
+            driveDuration: rowingData.driveDuration,
+            speed: rowingData.speed,
+            strokeCount: rowingData.strokeCount,
+            strokeRate: rowingData.strokeRate,
+            elapsedTime: existing?.elapsedTime ?? rowingData.elapsedTime,
+            heartRate: existing?.heartRate ?? rowingData.heartRate,
+            ...this.mergeExtendedMetrics(rowingData, identity, existing),
+            ...this.mergeForceCurve(identity, existing, context),
+        };
+    }
+
+    private mergeExtendedMetrics(
+        rowingData: ISessionData,
+        identity: IStrokePersistenceIdentity,
+        existing: IMetricsEntity | undefined,
+    ): Pick<
+        IMetricsEntity,
+        "avgStrokePower" | "dragFactor" | "recoveryDuration" | "isExtendedMetricsPending"
+    > {
+        if (
+            identity.isExtendedMetricsPending === true &&
+            existing !== undefined &&
+            existing.isExtendedMetricsPending !== true
+        ) {
+            return {
+                avgStrokePower: existing.avgStrokePower,
+                dragFactor: existing.dragFactor,
+                recoveryDuration: existing.recoveryDuration,
+                isExtendedMetricsPending: existing.isExtendedMetricsPending,
+            };
+        }
+
+        return {
+            avgStrokePower: rowingData.avgStrokePower,
+            dragFactor: rowingData.dragFactor,
+            recoveryDuration: rowingData.recoveryDuration,
+            isExtendedMetricsPending: identity.isExtendedMetricsPending,
+        };
+    }
+
+    private mergeForceCurve(
+        identity: IStrokePersistenceIdentity,
+        existing: IMetricsEntity | undefined,
+        context: IStrokePersistenceContext,
+    ): Pick<IMetricsEntity, "forceCurve" | "forceCurveStatus"> {
+        if (existing?.forceCurveStatus === "complete" && existing.forceCurve !== undefined) {
+            return { forceCurve: existing.forceCurve, forceCurveStatus: existing.forceCurveStatus };
+        }
+
+        if (identity.forceCurveStatus === "complete" && identity.forceCurve !== undefined) {
+            return { forceCurve: identity.forceCurve, forceCurveStatus: "complete" };
+        }
+
+        const forceCurveStatus =
+            identity.forceCurveStatus ??
+            existing?.forceCurveStatus ??
+            (!context.hasV2Identity ? "legacy" : undefined);
+
+        return {
+            forceCurve: identity.forceCurve ?? existing?.forceCurve,
+            forceCurveStatus:
+                forceCurveStatus === "complete" && identity.forceCurve === undefined
+                    ? existing?.forceCurveStatus
+                    : forceCurveStatus,
+        };
+    }
+
+    private async upsertLegacyHandleForces(
+        rowingData: ISessionData,
+        identity: IStrokePersistenceIdentity,
+        sessionId: number,
+        hasV2Identity: boolean,
+    ): Promise<void> {
+        if (hasV2Identity) {
+            return;
+        }
+        if (identity.forceCurve === undefined && rowingData.handleForces.length === 0) {
+            return;
+        }
+
+        const strokeId = identity.logicalStrokeCount ?? rowingData.strokeCount;
+        const existing = await appDB.handleForces.where({ sessionId, strokeId }).last();
+        const entity = await this.mergeLegacyHandleForces(
+            rowingData,
+            identity,
+            existing,
+            sessionId,
+            strokeId,
+        );
+        await appDB.handleForces.put(entity);
+    }
+
+    private async mergeLegacyHandleForces(
+        rowingData: ISessionData,
+        identity: IStrokePersistenceIdentity,
+        existing: IHandleForcesEntity | undefined,
+        sessionId: number,
+        strokeId: number,
+    ): Promise<IHandleForcesEntity> {
+        const forceCurve = identity.forceCurve?.samples;
+        const incomingForces =
+            forceCurve?.map((point: IForceCurvePoint): number => point.force) ?? rowingData.handleForces;
+        const entity: IHandleForcesEntity = {
+            timeStamp: existing?.timeStamp ?? (await this.allocateTimestamp(appDB.handleForces)),
+            sessionId,
+            strokeId,
+            handleForces: incomingForces,
+            driveLength: identity.forceCurve?.driveLength ?? rowingData.driveLength,
+            forceCurve: forceCurve ?? existing?.forceCurve,
+            forceCurveStatus: identity.forceCurveStatus ?? existing?.forceCurveStatus ?? "legacy",
+        };
+
+        if (existing?.forceCurveStatus === "complete") {
+            entity.handleForces = existing.handleForces;
+            entity.driveLength = existing.driveLength;
+            entity.forceCurve = existing.forceCurve;
+            entity.forceCurveStatus = existing.forceCurveStatus;
+        }
+
+        return entity;
+    }
+
+    private getStrokeKey(rowingData: ISessionData, identity: IStrokePersistenceIdentity): string {
+        if (identity.sourceEpoch !== undefined && identity.sourceStrokeId !== undefined) {
+            return `v2:${identity.sourceEpoch}:${identity.sourceStrokeId}`;
+        }
+
+        return `legacy:${identity.logicalStrokeCount ?? rowingData.strokeCount}`;
+    }
+
+    private reserveTimestamp(): number {
+        this.lastAllocatedTimestamp = Math.max(Date.now(), this.lastAllocatedTimestamp + 1);
+
+        return this.lastAllocatedTimestamp;
+    }
+
+    private async allocateTimestamp<T extends { timeStamp: number }>(
+        table: Table<T, number>,
+    ): Promise<number> {
+        let timeStamp = this.reserveTimestamp();
+
+        while ((await table.get(timeStamp)) !== undefined) {
+            timeStamp = this.reserveTimestamp();
+        }
+
+        return timeStamp;
+    }
+
+    private isDuplicateLogicalStroke(previous: IExportRecord | undefined, current: IExportRecord): boolean {
+        if (previous === undefined || previous === current) {
+            return false;
+        }
+
+        if (previous.strokeKey !== undefined && current.strokeKey !== undefined) {
+            return previous.strokeKey === current.strokeKey;
+        }
+
+        return (
+            previous.strokeKey === undefined &&
+            current.strokeKey === undefined &&
+            previous.strokeCount === current.strokeCount
+        );
+    }
+
+    private formatSessionCsvRow(
+        data: IExportRecord,
+        previous: IExportRecord | undefined,
+        handleForces: Record<number, IExportHandleForces>,
+    ): string {
+        const previousRecord = previous ?? data;
+        const calculatedSpeed = this.calculateExportSpeed(data, previousRecord);
+        const handleForce = this.getExportHandleForce(data, handleForces) ?? {
+            handleForces: [],
+            driveLength: 0,
+            peakForce: 0,
+            peakForcePositionNorm: 0,
+        };
+        const isCurveAvailable =
+            data.strokeKey === undefined || this.getExportHandleForce(data, handleForces) !== undefined;
+        const forceValues = `"${handleForce.handleForces.map((force: number): string => force.toFixed(2)).join(",")}"`;
+        const heartRate = data.heartRate?.heartRate ?? "NaN";
+        const isPending = data.isExtendedMetricsPending === true;
+        const isInvalidSpeed = isNaN(calculatedSpeed);
+
+        return [
+            data.strokeCount.toString(),
+            data.elapsedTime.toFixed(2),
+            (data.distance / 100).toString(),
+            (isInvalidSpeed || calculatedSpeed === 0 ? 0 : 500 / calculatedSpeed).toFixed(2),
+            (isInvalidSpeed ? 0 : calculatedSpeed * 3.6).toFixed(2),
+            isPending ? "" : data.avgStrokePower.toString(),
+            Math.round(data.strokeRate).toString(),
+            data.distPerStroke.toString(),
+            data.driveDuration.toFixed(2),
+            isPending ? "" : data.recoveryDuration.toFixed(2),
+            isCurveAvailable ? handleForce.driveLength.toFixed(2) : "",
+            heartRate.toString(),
+            isPending ? "" : data.dragFactor.toString(),
+            isCurveAvailable ? handleForce.peakForce.toFixed(2) : "",
+            isCurveAvailable ? handleForce.peakForcePositionNorm.toFixed(1) : "",
+            isCurveAvailable ? forceValues : "",
+        ].join(",");
+    }
+
+    private calculateExportSpeed(data: IExportRecord, previous: IExportRecord): number {
+        if (previous.distance !== 0) {
+            return (data.strokeRate / 60) * data.distPerStroke;
+        }
+
+        return data.elapsedTime > 0 ? data.distance / 100 / data.elapsedTime : 0;
+    }
+
+    private getExportHandleForce(
+        record: IExportRecord,
+        handleForcesByStroke: Record<number, IExportHandleForces>,
+    ): IExportHandleForces | undefined {
+        if (record.strokeKey !== undefined && record.forceCurveStatus !== "legacy") {
+            if (record.forceCurveStatus !== "complete" || record.forceCurve === undefined) {
+                return undefined;
+            }
+
+            const samples = record.forceCurve.samples;
+            const forceValues = samples.map((sample: IForceCurvePoint): number => sample.force);
+            const peakForce = samples.reduce(
+                (maximum: number, sample: IForceCurvePoint): number => Math.max(maximum, sample.force),
+                0,
+            );
+            const peakForceIndex = samples.findIndex(
+                (sample: IForceCurvePoint): boolean => sample.force === peakForce,
+            );
+            const peakDistance = samples[peakForceIndex]?.distance ?? 0;
+            const driveLength = record.forceCurve.driveLength;
+            const peakForcePositionNorm =
+                Number.isFinite(driveLength) && driveLength > 0 && Number.isFinite(peakDistance)
+                    ? (peakDistance / driveLength) * 100
+                    : 0;
+
+            return {
+                peakForce,
+                peakForcePositionNorm,
+                driveLength,
+                handleForces: forceValues,
+                forceCurve: samples,
+                forceCurveStatus: "complete",
+            };
+        }
+
+        return handleForcesByStroke[record.strokeCount];
     }
 }

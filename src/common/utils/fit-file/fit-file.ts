@@ -1,5 +1,6 @@
 import { FitDevInfo, FitWriter } from "@markw65/fit-file-writer";
 
+import { IForceCurvePoint } from "../../common.interfaces";
 import { IExportHandleForces, IExportRecord, IExportSession } from "../../database.interfaces";
 
 import {
@@ -11,6 +12,7 @@ import {
     DEVELOPER_FIELD_DEFS,
     DevFieldId,
     FitEventType,
+    getRecordHandleForces,
     getSegmentStartDistance,
     getSportConfig,
     LapSegment,
@@ -58,19 +60,25 @@ export class FitFileBuilder {
         };
         const recordsWithZero = [zeroRecord, ...records];
 
-        this.endTime = records[records.length - 1].timeStamp;
+        this.endTime = new Date(
+            Math.max(
+                records[records.length - 1].timeStamp.getTime(),
+                exportSession.finishAt ?? records[records.length - 1].timeStamp.getTime(),
+            ),
+        );
         this.startDateTime = this.fitWriter.time(startTime);
         this.endDateTime = this.fitWriter.time(this.endTime);
         this.wallClockTotal = (this.endTime.getTime() - startTime.getTime()) / 1000;
-        this.elapsedTimeTotal = records[records.length - 1].elapsedTime;
+        this.elapsedTimeTotal = exportSession.elapsedTime ?? records[records.length - 1].elapsedTime;
         this.stats = computeStats(recordsWithZero, exportSession.handleForces);
         this.sportConfig = getSportConfig(exportSession.deviceName);
-        this.maxCurvePointCount = computeMaxCurvePointCount(exportSession.handleForces);
+        this.maxCurvePointCount = computeMaxCurvePointCount(exportSession.handleForces, records);
         this.segments = buildLapSegments(
             recordsWithZero,
             exportSession.laps,
             startTime.getTime(),
             exportSession.handleForces,
+            exportSession.finishAt,
         );
         this.segmentStats = this.segments.map((segment: LapSegment): SessionStats => {
             const records = segment.isPause ? segment.records.slice(1, -1) : segment.records;
@@ -133,8 +141,9 @@ export class FitFileBuilder {
 
     private writeRecords(): void {
         for (const record of this.records) {
-            const currentHandleForces = this.exportSession.handleForces[record.strokeCount];
-            const dragFactor = Math.round(record.dragFactor);
+            const currentHandleForces = getRecordHandleForces(record, this.exportSession.handleForces);
+            const isExtendedMetricsReady = record.isExtendedMetricsPending !== true;
+            const dragFactor = isExtendedMetricsReady ? Math.round(record.dragFactor) : 0;
 
             this.fitWriter.writeMessage(
                 "record",
@@ -143,11 +152,13 @@ export class FitFileBuilder {
                     distance: record.distance / 100,
                     enhanced_speed: record.speed,
                     cadence: Math.round(record.strokeRate),
-                    power: Math.round(record.avgStrokePower),
                     total_cycles: record.strokeCount,
                     cycle_length16: record.distPerStroke,
-                    accumulated_power: Math.round(record.totalWork),
                     activity_type: "fitnessEquipment",
+                    ...(isExtendedMetricsReady && {
+                        power: Math.round(record.avgStrokePower),
+                        accumulated_power: Math.round(record.totalWork),
+                    }),
                     ...(record.heartRate !== undefined && { heart_rate: record.heartRate.heartRate }),
                     ...(currentHandleForces !== undefined && {
                         force: Math.round(computeMeanForce(currentHandleForces.handleForces)),
@@ -221,10 +232,12 @@ export class FitFileBuilder {
             ...(record.driveDuration > 0
                 ? [{ field_num: DevFieldId.StrokeDriveTime, value: record.driveDuration * 1000 }]
                 : []),
-            ...(record.recoveryDuration > 0
+            ...(record.isExtendedMetricsPending !== true && record.recoveryDuration > 0
                 ? [{ field_num: DevFieldId.StrokeRecoveryTime, value: record.recoveryDuration * 1000 }]
                 : []),
-            { field_num: DevFieldId.DragFactor, value: record.dragFactor },
+            ...(record.isExtendedMetricsPending !== true
+                ? [{ field_num: DevFieldId.DragFactor, value: record.dragFactor }]
+                : []),
         ];
 
         if (handleForces === undefined) {
@@ -256,13 +269,16 @@ export class FitFileBuilder {
     }
 
     private buildCurveFields(handleForces: IExportHandleForces): Array<FitDevInfo> {
-        const pointCount = Math.min(handleForces.handleForces.length, 127);
+        const forces =
+            handleForces.forceCurve?.map((point: IForceCurvePoint): number => point.force) ??
+            handleForces.handleForces;
+        const pointCount = Math.min(forces.length, 127);
 
         if (pointCount === 0 || this.maxCurvePointCount === 0) {
             return [];
         }
 
-        const paddedCurve = handleForces.handleForces
+        const paddedCurve = forces
             .slice(0, pointCount)
             .map((force: number): number => Math.round(force * 10))
             .concat(new Array<number>(this.maxCurvePointCount - pointCount).fill(0));
@@ -272,7 +288,7 @@ export class FitFileBuilder {
             { field_num: DevFieldId.InstrokeAbscissaType, value: 2 },
             {
                 field_num: DevFieldId.InstrokeSampleInterval,
-                value: Math.round((handleForces.driveLength / handleForces.handleForces.length) * 10000),
+                value: Math.round((handleForces.driveLength / forces.length) * 10000),
             },
             { field_num: DevFieldId.InstrokePointCount, value: pointCount },
         ];

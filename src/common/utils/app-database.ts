@@ -6,17 +6,19 @@ import {
     IHandleForcesEntity,
     ILapEntity,
     IMetricsEntity,
+    ISessionMetadataEntity,
     ISessionUploadEntity,
 } from "../database.interfaces";
 
 export class AppDB extends Dexie {
-    static dbVersion: number = 4;
+    static dbVersion: number = 5;
 
     connectedDevice!: Table<IConnectedDeviceEntity, number>;
     deltaTimes!: Table<IDeltaTimesEntity, number>;
     handleForces!: Table<IHandleForcesEntity, number>;
     laps!: Table<ILapEntity, number>;
     sessionData!: Table<IMetricsEntity, number>;
+    sessionMetadata!: Table<ISessionMetadataEntity, number>;
     sessionUploads!: Table<ISessionUploadEntity, number>;
 
     private upgradeProgressCallback: ((processed: number, total: number) => void) | undefined;
@@ -82,12 +84,24 @@ export class AppDB extends Dexie {
                 console.log("Version 3 migration completed");
             });
 
-        this.version(AppDB.dbVersion).stores({
+        this.version(4).stores({
             deltaTimes: "&timeStamp, sessionId",
             handleForces: "&timeStamp, sessionId, [sessionId+strokeId]",
             sessionData: "&timeStamp, sessionId",
             connectedDevice: "&sessionId",
             laps: "&timeStamp, sessionId",
+            sessionUploads: "&sessionId",
+        });
+
+        // the optional compound key indexes only new stroke-keyed rows. Existing v4 rows
+        // have no strokeKey and remain byte-for-byte unchanged by this schema upgrade.
+        this.version(AppDB.dbVersion).stores({
+            deltaTimes: "&timeStamp, sessionId",
+            handleForces: "&timeStamp, sessionId, [sessionId+strokeId]",
+            sessionData: "&timeStamp, sessionId, &[sessionId+strokeKey]",
+            connectedDevice: "&sessionId",
+            laps: "&timeStamp, sessionId",
+            sessionMetadata: "&sessionId",
             sessionUploads: "&sessionId",
         });
     }

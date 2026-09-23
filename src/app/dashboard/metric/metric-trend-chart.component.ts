@@ -92,7 +92,10 @@ const END_COLOR = [20, 101, 211] as const;
             }
 
             .trend-bar {
-                transition: y 220ms ease, height 220ms ease, fill 220ms ease;
+                transition:
+                    y 220ms ease,
+                    height 220ms ease,
+                    fill 220ms ease;
             }
 
             .trend-line,
@@ -115,7 +118,10 @@ const END_COLOR = [20, 101, 211] as const;
                 stroke: #ffffff;
                 stroke-width: 1;
                 vector-effect: non-scaling-stroke;
-                transition: cx 220ms ease, cy 220ms ease, fill 220ms ease;
+                transition:
+                    cx 220ms ease,
+                    cy 220ms ease,
+                    fill 220ms ease;
             }
 
             .trend-empty {
@@ -146,7 +152,9 @@ export class MetricTrendChartComponent {
 
     readonly points: Signal<ReadonlyArray<TrendPoint>> = computed((): ReadonlyArray<TrendPoint> => {
         const values = this.samples().filter((value: number): boolean => Number.isFinite(value));
-        const intensityValues = this.intensitySamples().filter((value: number): boolean => Number.isFinite(value));
+        const intensityValues = this.intensitySamples().filter((value: number): boolean =>
+            Number.isFinite(value),
+        );
         const colorValues = intensityValues.length === values.length ? intensityValues : values;
 
         if (values.length === 0) {

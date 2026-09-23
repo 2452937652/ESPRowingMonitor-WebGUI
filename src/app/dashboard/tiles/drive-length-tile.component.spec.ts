@@ -7,7 +7,8 @@ import { DriveLengthTileComponent } from "./drive-length-tile.component";
 describe("DriveLengthTileComponent", (): void => {
     it("displays metres stored internally as rounded centimetres", async (): Promise<void> => {
         await TestBed.configureTestingModule({ imports: [DriveLengthTileComponent] }).compileComponents();
-        const fixture: ComponentFixture<DriveLengthTileComponent> = TestBed.createComponent(DriveLengthTileComponent);
+        const fixture: ComponentFixture<DriveLengthTileComponent> =
+            TestBed.createComponent(DriveLengthTileComponent);
         fixture.componentRef.setInput("label", "Drive Length");
         fixture.componentRef.setInput("rowingData", createMockMetrics({ driveLength: 1.396 }));
         fixture.detectChanges();
