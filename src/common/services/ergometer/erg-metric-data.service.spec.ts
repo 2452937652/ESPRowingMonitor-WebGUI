@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, Mock, vi } from "vitest";
 import {
     CYCLING_POWER_CHARACTERISTIC,
     CYCLING_SPEED_AND_CADENCE_CHARACTERISTIC,
+    DELTA_TIMES_CHARACTERISTIC,
+    HANDLE_FORCES_CHARACTERISTIC,
     ROWER_DATA_CHARACTERISTIC,
 } from "../../ble.interfaces";
 import { IBaseMetrics, IExtendedMetrics } from "../../common.interfaces";
@@ -26,6 +28,45 @@ import {
 
 import { ErgConnectionService } from "./erg-connection.service";
 import { ErgMetricsService } from "./erg-metric-data.service";
+
+function createPhysicalForceCurveChunkDataView(
+    samplesInChunk: number = 1,
+    totalSamples: number = 1,
+    chunkCount: number = 1,
+    chunkIndex: number = 1,
+): DataView {
+    const value = new DataView(new ArrayBuffer(16 + samplesInChunk * 12));
+    value.setUint8(0, 1);
+    value.setUint8(1, chunkCount);
+    value.setUint8(2, chunkIndex);
+    value.setUint8(3, 0);
+    value.setUint16(4, 22, true);
+    value.setUint16(6, totalSamples, true);
+    value.setFloat32(8, 0.5, true);
+    value.setUint32(12, 988_786, true);
+
+    for (let index = 0; index < samplesInChunk; index++) {
+        const offset = 16 + index * 12;
+        value.setFloat32(offset, index * 0.03, true);
+        value.setUint32(offset + 4, index * 60_000, true);
+        value.setFloat32(offset + 8, index === 10 ? 55.5 : 10, true);
+    }
+
+    return value;
+}
+
+function createPhysicalForceCurveFragmentDataView(curve: DataView): DataView {
+    const fragment = new Uint8Array(curve.buffer, curve.byteOffset, curve.byteLength).slice(0, 12);
+    const value = new DataView(new ArrayBuffer(8 + fragment.byteLength));
+    value.setUint8(0, 2);
+    value.setUint8(1, 0);
+    value.setUint16(2, 22, true);
+    value.setUint16(4, curve.byteLength, true);
+    value.setUint16(6, 0, true);
+    new Uint8Array(value.buffer, value.byteOffset + 8, fragment.byteLength).set(fragment);
+
+    return value;
+}
 
 describe("ErgMetricsService", (): void => {
     const destroySubject: Subject<void> = new Subject<void>();
@@ -80,6 +121,10 @@ describe("ErgMetricsService", (): void => {
     beforeEach((): void => {
         mockBluetoothDevice = createMockBluetoothDevice();
         mockDeltaTimesCharacteristic = createMockCharacteristic(mockBluetoothDevice);
+        Object.defineProperty(mockDeltaTimesCharacteristic, "uuid", {
+            configurable: true,
+            value: DELTA_TIMES_CHARACTERISTIC,
+        });
         mockExtendedCharacteristic = createMockCharacteristic(mockBluetoothDevice);
         mockHandleForceCharacteristic = createMockCharacteristic(mockBluetoothDevice);
         mockMeasurementCharacteristic = createMockCharacteristic(mockBluetoothDevice);
@@ -248,6 +293,63 @@ describe("ErgMetricsService", (): void => {
 
                 expect(emittedValues).toHaveLength(1);
                 expect(emittedValues[0]).toEqual([500, 1000, 1500, 2000]);
+            });
+
+            it("should reject malformed and Force Curve frames while preserving valid legacy intervals", async (): Promise<void> => {
+                const emittedValues: Array<Array<number>> = [];
+                const warningSpy = vi.spyOn(console, "warn").mockImplementation((): void => undefined);
+
+                service
+                    .streamDeltaTimes$()
+                    .pipe(takeUntil(destroySubject))
+                    .subscribe((value: Array<number>): void => {
+                        emittedValues.push(value);
+                    });
+
+                const trigger = await deltaTrigger;
+                trigger.triggerChanged(new DataView(new ArrayBuffer(0)));
+                trigger.triggerChanged(new DataView(new Uint8Array([1, 2, 3]).buffer));
+                trigger.triggerChanged(createPhysicalForceCurveChunkDataView(16, 31, 2, 1));
+                trigger.triggerChanged(
+                    createPhysicalForceCurveFragmentDataView(createPhysicalForceCurveChunkDataView()),
+                );
+                const v2Chunk = createPhysicalForceCurveChunkDataView();
+                v2Chunk.setUint8(0, 2);
+                trigger.triggerChanged(v2Chunk);
+                const v2Fragment = createPhysicalForceCurveFragmentDataView(v2Chunk);
+                v2Fragment.setUint8(0, 0xf2);
+                v2Fragment.setUint8(1, 2);
+                trigger.triggerChanged(v2Fragment);
+                // 66049 is a valid legacy interval even though its four bytes resemble a curve header.
+                trigger.triggerChanged(createDeltaTimesDataView([66049]));
+                trigger.triggerChanged(createDeltaTimesDataView([1000, 2000, 3000]));
+
+                expect(emittedValues).toEqual([[66049], [1000, 2000, 3000]]);
+                expect(warningSpy).toHaveBeenCalledTimes(6);
+                warningSpy.mockRestore();
+            });
+
+            it("should reject a characteristic with a non-Delta-Times UUID before subscribing", (): void => {
+                Object.defineProperty(mockDeltaTimesCharacteristic, "uuid", {
+                    configurable: true,
+                    value: HANDLE_FORCES_CHARACTERISTIC,
+                });
+                const warningSpy = vi.spyOn(console, "warn").mockImplementation((): void => undefined);
+                const emittedValues: Array<Array<number>> = [];
+
+                service
+                    .streamDeltaTimes$()
+                    .pipe(takeUntil(destroySubject))
+                    .subscribe((value: Array<number>): void => {
+                        emittedValues.push(value);
+                    });
+
+                expect(mockDeltaTimesCharacteristic.startNotifications).not.toHaveBeenCalled();
+                expect(emittedValues).toHaveLength(0);
+                expect(warningSpy).toHaveBeenCalledWith(
+                    `Ignoring unexpected Delta Times characteristic UUID: ${HANDLE_FORCES_CHARACTERISTIC}`,
+                );
+                warningSpy.mockRestore();
             });
 
             it("should reset delta times characteristic when observable completes", async (): Promise<void> => {
@@ -451,43 +553,6 @@ describe("ErgMetricsService", (): void => {
                     recoveryDuration: Math.round((5000 / 4096) * 1e6),
                     dragFactor: 512,
                 });
-            });
-
-            it("should prefer stroke-keyed V2 microsecond durations and expose pending recovery metrics", async (): Promise<void> => {
-                const emittedValues: Array<IExtendedMetrics> = [];
-
-                service
-                    .streamExtended$()
-                    .pipe(takeUntil(destroySubject))
-                    .subscribe((value: IExtendedMetrics): void => {
-                        emittedValues.push(value);
-                    });
-
-                const buffer = new ArrayBuffer(20);
-                const value = new DataView(buffer);
-                value.setUint16(0, 220, true);
-                value.setUint16(2, 0xffff, true);
-                value.setUint16(4, 0xffff, true);
-                value.setUint16(6, 101, true);
-                value.setUint8(8, 2);
-                value.setUint8(9, 0x02); // recovery pending + legacy duration saturated
-                value.setUint16(10, 73, true);
-                value.setUint32(12, 62_000_000, true);
-                value.setUint32(16, 2_750_000, true);
-
-                (await extendedTrigger).triggerChanged(value);
-
-                expect(emittedValues).toEqual([
-                    {
-                        avgStrokePower: 220,
-                        driveDuration: 62_000_000,
-                        recoveryDuration: 2_750_000,
-                        dragFactor: 101,
-                        strokeId: 73,
-                        recoveryMetricsComplete: false,
-                        legacyDurationClamped: true,
-                    },
-                ]);
             });
 
             it("should support backward compatibility with 7-byte packets (old format)", async (): Promise<void> => {

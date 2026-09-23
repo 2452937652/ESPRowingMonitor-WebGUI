@@ -1,6 +1,7 @@
 import { Decoder, Stream, Utils } from "@garmin/fitsdk";
 import { beforeEach, describe, expect, it } from "vitest";
 
+import { IForceCurve } from "../../common.interfaces";
 import { IExportRecord, IExportSession } from "../../database.interfaces";
 
 import { createSessionFitFile } from "./fit-file";
@@ -85,6 +86,17 @@ describe("createSessionFitFile function", (): void => {
             expect(activity["eventType"]).toBe("stop");
             // wallClockTotal = lastRecord.timestamp − firstRecord.timestamp = 2 s
             expect(activity["totalTimerTime"]).toBe(3);
+        });
+
+        it("should use v5 stop metadata for the FIT activity boundary", (): void => {
+            const stopTime = testSession.sessionId + 10000;
+            const session = createTestSession({ finishAt: stopTime, elapsedTime: 8 });
+
+            const messages = decodeValidMessages(createSessionFitFile(session));
+
+            expect(messages["activityMesgs"][0]["totalTimerTime"]).toBe(10);
+            expect(messages["sessionMesgs"][0]["totalMovingTime"]).toBe(8);
+            expect(messages["eventMesgs"].at(-1)?.["timestamp"]).toEqual(new Date(stopTime));
         });
 
         it("should set localTimestamp to UTC timestamp adjusted by timezone offset", (): void => {
@@ -200,6 +212,72 @@ describe("createSessionFitFile function", (): void => {
             expect(rawFields(messages["recordMesgs"][0])["148"]).toBe(150000);
             expect(rawFields(messages["recordMesgs"][1])["148"]).toBe(200000);
             expect(rawFields(messages["recordMesgs"][2])["148"]).toBe(250000);
+        });
+
+        it("should use the physical curve on a V2 record despite a numeric stroke ID collision", (): void => {
+            const curve: IForceCurve = {
+                strokeId: 51,
+                driveLength: 1.5,
+                driveDurationUs: 800000,
+                samples: [
+                    { distance: 0, elapsedTimeUs: 0, force: 80 },
+                    { distance: 0.3, elapsedTimeUs: 400000, force: 220 },
+                    { distance: 1.5, elapsedTimeUs: 800000, force: 90 },
+                ],
+            };
+            testSession = createTestSession({
+                records: [
+                    {
+                        ...testSession.records[0],
+                        strokeKey: "v2:2:51",
+                        sourceEpoch: 2,
+                        sourceStrokeId: 51,
+                        forceCurve: curve,
+                        forceCurveStatus: "complete",
+                    },
+                ],
+                handleForces: {
+                    1: {
+                        handleForces: [1000],
+                        peakForce: 1000,
+                        peakForcePositionNorm: 0,
+                        driveLength: 10,
+                    },
+                },
+            });
+
+            const messages = decodeValidMessages(createSessionFitFile(testSession));
+            const record = rawFields(messages["recordMesgs"][0]);
+            const developerFields = record["developerFields"] as Record<string, unknown>;
+
+            expect(record["148"]).toBe(130000);
+            expect(developerFields["0"]).toBe(150);
+            expect(developerFields["6"]).toBe(2000);
+            expect(developerFields["7"]).toEqual([800, 2200, 900]);
+        });
+
+        it("should omit pending recovery metrics from FIT records", (): void => {
+            testSession = createTestSession({
+                records: [
+                    {
+                        ...testSession.records[0],
+                        strokeKey: "v2:2:51",
+                        sourceEpoch: 2,
+                        sourceStrokeId: 51,
+                        isExtendedMetricsPending: true,
+                    },
+                ],
+                handleForces: {},
+            });
+
+            const messages = decodeValidMessages(createSessionFitFile(testSession));
+            const record = messages["recordMesgs"][0];
+
+            expect(record["power"]).toBeUndefined();
+            expect(record["accumulatedPower"]).toBeUndefined();
+            expect(record["resistance"]).toBeUndefined();
+            expect(rawFields(record)["144"]).toBeUndefined();
+            expect(rawFields(record)["145"]).toBeUndefined();
         });
     });
 

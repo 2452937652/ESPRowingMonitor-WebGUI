@@ -50,7 +50,7 @@ const buildLegacyForceCurve: (stroke: ISessionStroke) => Array<IForceCurvePoint>
 
     return handleForces.map((force: number, index: number): IForceCurvePoint => ({
         distance: sampleDistance * index,
-        elapsedTime: 0,
+        elapsedTimeUs: 0,
         force,
     }));
 };

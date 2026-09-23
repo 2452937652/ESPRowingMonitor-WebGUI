@@ -811,7 +811,12 @@ describe("DashboardComponent", (): void => {
         it("should include trend inputs for a trend-enabled tile without an icon", (): void => {
             const inputs = component.tileEntries().get("dragFactor")?.inputs;
 
-            expect(Object.keys(inputs ?? {}).sort()).toEqual(["label", "rowingData", "trendHistory", "trendStyle"]);
+            expect(Object.keys(inputs ?? {}).sort()).toEqual([
+                "label",
+                "rowingData",
+                "trendHistory",
+                "trendStyle",
+            ]);
             expect(inputs?.rowingData).toBe(component.rowingData());
             expect(inputs?.label).toBe("Drag Factor");
             expect(inputs?.icon).toBeUndefined();

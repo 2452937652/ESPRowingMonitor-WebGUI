@@ -8,7 +8,10 @@ export class ErgConnections {
     readonly deltaTimesCharacteristic$: Observable<BluetoothRemoteGATTCharacteristic | undefined>;
     readonly extendedCharacteristic$: Observable<BluetoothRemoteGATTCharacteristic | undefined>;
     readonly handleForceCharacteristic$: Observable<BluetoothRemoteGATTCharacteristic | undefined>;
-    readonly handleForceCurveCharacteristic$: Observable<BluetoothRemoteGATTCharacteristic | undefined>;
+    readonly physicalForceCurveV2Characteristic$: Observable<BluetoothRemoteGATTCharacteristic | undefined>;
+    readonly completedStrokeMetricsV2Characteristic$: Observable<
+        BluetoothRemoteGATTCharacteristic | undefined
+    >;
 
     readonly measurementCharacteristic$: Observable<BluetoothRemoteGATTCharacteristic | undefined>;
 
@@ -27,8 +30,12 @@ export class ErgConnections {
         new BehaviorSubject<BluetoothRemoteGATTCharacteristic | undefined>(undefined);
     protected handleForceCharacteristic: BehaviorSubject<BluetoothRemoteGATTCharacteristic | undefined> =
         new BehaviorSubject<BluetoothRemoteGATTCharacteristic | undefined>(undefined);
-    protected handleForceCurveCharacteristic: BehaviorSubject<BluetoothRemoteGATTCharacteristic | undefined> =
-        new BehaviorSubject<BluetoothRemoteGATTCharacteristic | undefined>(undefined);
+    protected physicalForceCurveV2Characteristic: BehaviorSubject<
+        BluetoothRemoteGATTCharacteristic | undefined
+    > = new BehaviorSubject<BluetoothRemoteGATTCharacteristic | undefined>(undefined);
+    protected completedStrokeMetricsV2Characteristic: BehaviorSubject<
+        BluetoothRemoteGATTCharacteristic | undefined
+    > = new BehaviorSubject<BluetoothRemoteGATTCharacteristic | undefined>(undefined);
 
     protected measurementCharacteristic: BehaviorSubject<BluetoothRemoteGATTCharacteristic | undefined> =
         new BehaviorSubject<BluetoothRemoteGATTCharacteristic | undefined>(undefined);
@@ -44,7 +51,9 @@ export class ErgConnections {
         this.deltaTimesCharacteristic$ = this.deltaTimesCharacteristic.asObservable();
         this.extendedCharacteristic$ = this.extendedCharacteristic.asObservable();
         this.handleForceCharacteristic$ = this.handleForceCharacteristic.asObservable();
-        this.handleForceCurveCharacteristic$ = this.handleForceCurveCharacteristic.asObservable();
+        this.physicalForceCurveV2Characteristic$ = this.physicalForceCurveV2Characteristic.asObservable();
+        this.completedStrokeMetricsV2Characteristic$ =
+            this.completedStrokeMetricsV2Characteristic.asObservable();
         this.measurementCharacteristic$ = this.measurementCharacteristic.asObservable();
         this.settingsCharacteristic$ = this.settingsCharacteristic.asObservable();
         this.strokeSettingsCharacteristic$ = this.strokeSettingsCharacteristic.asObservable();
@@ -62,8 +71,11 @@ export class ErgConnections {
     readHandleForceCharacteristic(): BluetoothRemoteGATTCharacteristic | undefined {
         return this.handleForceCharacteristic.value;
     }
-    readHandleForceCurveCharacteristic(): BluetoothRemoteGATTCharacteristic | undefined {
-        return this.handleForceCurveCharacteristic.value;
+    readPhysicalForceCurveV2Characteristic(): BluetoothRemoteGATTCharacteristic | undefined {
+        return this.physicalForceCurveV2Characteristic.value;
+    }
+    readCompletedStrokeMetricsV2Characteristic(): BluetoothRemoteGATTCharacteristic | undefined {
+        return this.completedStrokeMetricsV2Characteristic.value;
     }
     readMeasurementCharacteristic(): BluetoothRemoteGATTCharacteristic | undefined {
         return this.measurementCharacteristic.value;
@@ -87,8 +99,11 @@ export class ErgConnections {
     resetHandleForceCharacteristic(): void {
         return this.handleForceCharacteristic.next(undefined);
     }
-    resetHandleForceCurveCharacteristic(): void {
-        return this.handleForceCurveCharacteristic.next(undefined);
+    resetPhysicalForceCurveV2Characteristic(): void {
+        return this.physicalForceCurveV2Characteristic.next(undefined);
+    }
+    resetCompletedStrokeMetricsV2Characteristic(): void {
+        return this.completedStrokeMetricsV2Characteristic.next(undefined);
     }
     resetMeasurementCharacteristic(): void {
         return this.measurementCharacteristic.next(undefined);

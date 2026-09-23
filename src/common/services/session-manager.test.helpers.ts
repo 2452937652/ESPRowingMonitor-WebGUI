@@ -1,6 +1,6 @@
 import { TestBed } from "@angular/core/testing";
 import { MatSnackBar } from "@angular/material/snack-bar";
-import { BehaviorSubject } from "rxjs";
+import { BehaviorSubject, Subject } from "rxjs";
 import { vi } from "vitest";
 
 import {
@@ -40,14 +40,15 @@ export const mockRawMetrics: IRawCalculatedMetrics = {
 export interface SessionManagerTestContext {
     service: SessionManagerService;
     rawMetricsSubject: BehaviorSubject<IRawCalculatedMetrics>;
+    strokeMetricUpdatesSubject: Subject<IRawCalculatedMetrics>;
     configSubject: BehaviorSubject<Config>;
     heartRateSubject: BehaviorSubject<IHeartRate | undefined>;
     connectionStatusSubject: BehaviorSubject<IErgConnectionStatus>;
     mockDataRecorderService: Pick<
         DataRecorderService,
-        "reset" | "addSessionData" | "addLap" | "currentSessionId"
+        "reset" | "addSessionData" | "upsertSessionStroke" | "finishSession" | "addLap" | "currentSessionId"
     >;
-    mockMetricsService: Pick<MetricsService, "rawMetrics$" | "heartRateData$">;
+    mockMetricsService: Pick<MetricsService, "rawMetrics$" | "strokeMetricUpdates$" | "heartRateData$">;
     mockErgConnectionService: Pick<ErgConnectionService, "connectionStatus$">;
     mockConfigManagerService: Pick<ConfigManagerService, "configChanged$" | "getGroup">;
     mockIntervalsIcuService: Pick<IntervalsIcuService, "uploadSession">;
@@ -56,20 +57,27 @@ export interface SessionManagerTestContext {
 
 export function setupSessionManagerTestBed(): SessionManagerTestContext {
     const rawMetricsSubject = new BehaviorSubject<IRawCalculatedMetrics>(mockRawMetrics);
+    const strokeMetricUpdatesSubject = new Subject<IRawCalculatedMetrics>();
     const heartRateSubject = new BehaviorSubject<IHeartRate | undefined>(undefined);
     const connectionStatusSubject = new BehaviorSubject<IErgConnectionStatus>({ status: "disconnected" });
 
-    const mockMetricsService: Pick<MetricsService, "rawMetrics$" | "heartRateData$"> = {
+    const mockMetricsService: Pick<
+        MetricsService,
+        "rawMetrics$" | "strokeMetricUpdates$" | "heartRateData$"
+    > = {
         rawMetrics$: rawMetricsSubject.asObservable(),
+        strokeMetricUpdates$: strokeMetricUpdatesSubject.asObservable(),
         heartRateData$: heartRateSubject.asObservable(),
     };
 
     const mockDataRecorderService: Pick<
         DataRecorderService,
-        "reset" | "addSessionData" | "addLap" | "currentSessionId"
+        "reset" | "addSessionData" | "upsertSessionStroke" | "finishSession" | "addLap" | "currentSessionId"
     > = {
         reset: vi.fn().mockResolvedValue(undefined),
         addSessionData: vi.fn().mockResolvedValue(undefined),
+        upsertSessionStroke: vi.fn().mockResolvedValue(1),
+        finishSession: vi.fn().mockResolvedValue(1),
         addLap: vi.fn().mockResolvedValue(1),
         currentSessionId: 1700000000000,
     };
@@ -111,6 +119,7 @@ export function setupSessionManagerTestBed(): SessionManagerTestContext {
     return {
         service,
         rawMetricsSubject,
+        strokeMetricUpdatesSubject,
         configSubject,
         heartRateSubject,
         connectionStatusSubject,

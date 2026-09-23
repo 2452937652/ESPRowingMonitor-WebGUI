@@ -30,6 +30,21 @@ describe("AppDB", (): void => {
         seed.close();
     };
 
+    const seedV4Database = async (sessionDataRows: Array<IMetricsEntity>): Promise<void> => {
+        const seed = new Dexie(testDbName);
+        seed.version(4).stores({
+            deltaTimes: "&timeStamp, sessionId",
+            handleForces: "&timeStamp, sessionId, [sessionId+strokeId]",
+            sessionData: "&timeStamp, sessionId",
+            connectedDevice: "&sessionId",
+            laps: "&timeStamp, sessionId",
+            sessionUploads: "&sessionId",
+        });
+        await seed.open();
+        await seed.table("sessionData").bulkPut(sessionDataRows);
+        seed.close();
+    };
+
     beforeEach((): void => {
         appDb = new AppDB(testDbName);
     });
@@ -321,6 +336,55 @@ describe("AppDB", (): void => {
 
             expect(stored?.isPause).toBe(true);
             expect(stored?.type).toBe("manual");
+        });
+    });
+
+    describe("version 5 stroke persistence schema", (): void => {
+        it("should preserve duplicate legacy rows and add the optional unique stroke index", async (): Promise<void> => {
+            const oldRows: Array<IMetricsEntity> = [
+                {
+                    sessionId: 1000,
+                    timeStamp: 2000,
+                    strokeCount: 8,
+                    distance: 1200,
+                    distPerStroke: 6,
+                    avgStrokePower: 100,
+                    dragFactor: 110,
+                    driveDuration: 0.8,
+                    recoveryDuration: 1.2,
+                    speed: 3.5,
+                    strokeRate: 24,
+                    elapsedTime: 1,
+                },
+                {
+                    sessionId: 1000,
+                    timeStamp: 3000,
+                    strokeCount: 8,
+                    distance: 1300,
+                    distPerStroke: 6,
+                    avgStrokePower: 102,
+                    dragFactor: 111,
+                    driveDuration: 0.8,
+                    recoveryDuration: 1.2,
+                    speed: 3.6,
+                    strokeRate: 24,
+                    elapsedTime: 2,
+                },
+            ];
+            await seedV4Database(oldRows);
+
+            await appDb.open();
+
+            const records = await appDb.sessionData.where({ sessionId: 1000 }).toArray();
+            const strokeIndex = appDb.sessionData.schema.indexes.find(
+                (index: IndexSpec): boolean => index.name === "[sessionId+strokeKey]",
+            );
+            expect(records).toEqual(oldRows);
+            expect(records.every((record: IMetricsEntity): boolean => record.strokeKey === undefined)).toBe(
+                true,
+            );
+            expect(strokeIndex?.unique).toBe(true);
+            expect(appDb.tables.map((table: Table): string => table.name)).toContain("sessionMetadata");
         });
     });
 });

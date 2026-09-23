@@ -11,7 +11,11 @@ import { MetricComponent } from "../metric/metric.component";
         <app-metric
             [title]="label()"
             [icon]="icon()"
-            [value]="rowingData().isExtendedMetricsPending === true ? '--' : (rowingData().recoveryDuration | roundNumber: 2)"
+            [value]="
+                rowingData().isExtendedMetricsPending === true
+                    ? '--'
+                    : (rowingData().recoveryDuration | roundNumber: 2)
+            "
             unit="sec"
             [trendSamples]="trendHistory().recoveryTime"
             [trendStyle]="trendStyle()"

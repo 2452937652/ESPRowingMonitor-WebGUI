@@ -42,7 +42,7 @@ const buildLegacyForceCurve = (forces: Array<number>, driveLength: number): Arra
 
     return forces.map((force: number, index: number): IForceCurvePoint => ({
         distance: sampleDistance * index,
-        elapsedTime: 0,
+        elapsedTimeUs: 0,
         force,
     }));
 };
@@ -127,7 +127,7 @@ export class SessionAnalysisService {
             uniqueRecords.set(record.strokeIndex, record);
         }
         const canonicalRecords = Array.from(uniqueRecords.values()).sort(
-            (a, b): number => a.timeStamp - b.timeStamp,
+            (a: ISessionRecord, b: ISessionRecord): number => a.timeStamp - b.timeStamp,
         );
 
         const strokes: Array<ISessionStroke> = canonicalRecords.map(
@@ -140,8 +140,7 @@ export class SessionAnalysisService {
                     peakForceIndex,
                 }: { peakForce: number; peakForceIndex: number } = findPeakForce(forces);
                 const driveLength = handleForce?.driveLength ?? 0;
-                const forceCurve =
-                    handleForce?.forceCurve ?? buildLegacyForceCurve(forces, driveLength);
+                const forceCurve = handleForce?.forceCurve ?? buildLegacyForceCurve(forces, driveLength);
 
                 return {
                     ...record,
@@ -212,20 +211,20 @@ export class SessionAnalysisService {
         }
 
         return Array.from(newestByStroke.values())
-            .sort((a, b): number => a.timeStamp - b.timeStamp)
+            .sort((a: IMetricsEntity, b: IMetricsEntity): number => a.timeStamp - b.timeStamp)
             .map((metric: IMetricsEntity): ISessionRecord => ({
-            strokeIndex: metric.strokeCount,
-            timeStamp: metric.timeStamp,
-            elapsedTime: metric.elapsedTime,
-            speed: metric.speed,
-            avgStrokePower: metric.avgStrokePower,
-            strokeRate: metric.strokeRate,
-            distPerStroke: metric.distPerStroke,
-            distance: metric.distance,
-            driveDuration: metric.driveDuration,
-            recoveryDuration: metric.recoveryDuration,
-            dragFactor: metric.dragFactor,
-            heartRate: metric.heartRate,
+                strokeIndex: metric.strokeCount,
+                timeStamp: metric.timeStamp,
+                elapsedTime: metric.elapsedTime,
+                speed: metric.speed,
+                avgStrokePower: metric.avgStrokePower,
+                strokeRate: metric.strokeRate,
+                distPerStroke: metric.distPerStroke,
+                distance: metric.distance,
+                driveDuration: metric.driveDuration,
+                recoveryDuration: metric.recoveryDuration,
+                dragFactor: metric.dragFactor,
+                heartRate: metric.heartRate,
             }));
     }
 
@@ -240,11 +239,17 @@ export class SessionAnalysisService {
 
         return Array.from(uniqueByStrokeCount.values()).map((metric: IMetricsEntity): ISessionStroke => {
             const handleForce = handleForcesMap[metric.strokeCount];
-            const forces: Array<number> = handleForce?.handleForces ?? [];
+            const physicalCurve =
+                metric.forceCurveStatus === "complete" ? metric.forceCurve?.samples : undefined;
+            const forces: Array<number> =
+                physicalCurve?.map((point: IForceCurvePoint): number => point.force) ??
+                handleForce?.handleForces ??
+                [];
             const { peakForce, peakForceIndex }: { peakForce: number; peakForceIndex: number } =
                 findPeakForce(forces);
-            const driveLength = handleForce?.driveLength ?? 0;
-            const forceCurve = handleForce?.forceCurve ?? buildLegacyForceCurve(forces, driveLength);
+            const driveLength = metric.forceCurve?.driveLength ?? handleForce?.driveLength ?? 0;
+            const forceCurve =
+                physicalCurve ?? handleForce?.forceCurve ?? buildLegacyForceCurve(forces, driveLength);
 
             return {
                 strokeIndex: metric.strokeCount,
@@ -261,7 +266,7 @@ export class SessionAnalysisService {
                 heartRate: metric.heartRate,
                 peakForce,
                 peakForcePositionNorm: calculatePeakPosition(
-                    handleForce?.forceCurve,
+                    physicalCurve ?? handleForce?.forceCurve,
                     driveLength,
                     peakForceIndex,
                     forces.length,

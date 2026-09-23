@@ -207,24 +207,6 @@ export interface IExtendedMetrics {
     legacyDurationClamped?: boolean;
 }
 
-/** A force sample with the physical drive coordinates supplied by BLE V2. */
-export interface IForceCurvePoint {
-    distance: number;
-    elapsedTime: number;
-    force: number;
-}
-
-export interface IForceCurve {
-    strokeId: number;
-    driveLength: number;
-    /** Seconds. The BLE decoder converts the wire value from microseconds. */
-    driveDuration: number;
-    samples: Array<IForceCurvePoint>;
-}
-
-/** Whether a stroke's force curve is complete, pending on the V2 channel, or legacy data. */
-export type ForceCurveStatus = "complete" | "pending" | "legacy" | "unavailable";
-
 /** A completed curve retained for display while the next stroke is still pending. */
 export interface IDisplayForceCurve extends IForceCurve {
     isDriveLengthAnomalous: boolean;
@@ -237,6 +219,26 @@ export interface IBaseMetrics {
     strokeCount: number;
 }
 
+export interface IForceCurvePoint {
+    /** Distance from the drive start, in metres. */
+    distance: number;
+    /** Time from the drive start, in microseconds. */
+    elapsedTimeUs: number;
+    /** Handle force, in newtons. */
+    force: number;
+}
+
+export interface IForceCurve {
+    strokeId: number;
+    /** Drive length, in metres. */
+    driveLength: number;
+    /** Drive duration, in microseconds. */
+    driveDurationUs: number;
+    samples: Array<IForceCurvePoint>;
+}
+
+export type ForceCurveStatus = "complete" | "pending" | "legacy" | "unavailable";
+
 export interface ICalculatedMetrics extends Omit<IExtendedMetrics & IBaseMetrics, "revTime" | "strokeTime"> {
     speed: number;
     strokeRate: number;
@@ -246,7 +248,7 @@ export interface ICalculatedMetrics extends Omit<IExtendedMetrics & IBaseMetrics
     driveLength: number;
     handleForces: Array<number>;
     /** Optional so sessions recorded by older WebGUI versions remain readable. */
-    forceCurve?: Array<IForceCurvePoint>;
+    forceCurve?: IForceCurve;
     /** Device stroke that owns forceCurve; never infer ownership from the current display stroke. */
     forceCurveStrokeId?: number;
     forceCurveStatus?: ForceCurveStatus;
@@ -258,6 +260,26 @@ export interface ICalculatedMetrics extends Omit<IExtendedMetrics & IBaseMetrics
     isExtendedMetricsPending?: boolean;
     totalWork: number;
     powerBalance: number;
+    sourceEpoch?: number;
+    sourceStrokeId?: number;
+}
+
+/** Calculated session values with optional identity and quality fields from the V2 protocol. */
+export interface ISessionCalculatedMetrics extends ICalculatedMetrics {
+    /** Present for stroke-keyed V2 data. Identifies the BLE connection epoch. */
+    sourceEpoch?: number;
+    /** Present for stroke-keyed V2 data. The device's raw 16 bit stroke ID. */
+    sourceStrokeId?: number;
+    /** Present when a validated physical force curve is available. */
+    forceCurve?: IForceCurve;
+    /** Identifies whether the V2 stroke curve is complete or still pending. */
+    forceCurveStatus?: ForceCurveStatus;
+    /** Raw ID owning `forceCurve`; prevents late curves attaching to the displayed stroke. */
+    forceCurveStrokeId?: number;
+    /** Current drive length quality marker, when a validated curve is available. */
+    isDriveLengthAnomalous?: boolean;
+    /** Recovery-derived values are placeholders until the V2 completion flag is set. */
+    isExtendedMetricsPending?: boolean;
 }
 
 export type SessionState = "running" | "paused" | "stopped";
@@ -268,9 +290,21 @@ export interface IRawCalculatedMetrics extends Omit<
 > {
     rawDistance: number;
     rawStrokeCount: number;
+    /** Present for stroke-keyed V2 data. Identifies the BLE connection epoch. */
+    sourceEpoch?: number;
+    /** Present for stroke-keyed V2 data. The device's raw 16 bit stroke ID. */
+    sourceStrokeId?: number;
+    /** Present when a validated physical force curve is available. */
+    forceCurve?: IForceCurve;
+    /** Identifies whether the current V2 stroke curve is complete or still pending. */
+    forceCurveStatus?: ForceCurveStatus;
+    /** Raw ID owning `forceCurve`; prevents late curves attaching to the displayed stroke. */
+    forceCurveStrokeId?: number;
+    /** Recovery-derived values are placeholders until the V2 completion flag is set. */
+    isExtendedMetricsPending?: boolean;
 }
 
-export interface ISessionData extends ICalculatedMetrics {
+export interface ISessionData extends ISessionCalculatedMetrics {
     elapsedTime: number;
     heartRate?: IHeartRate;
 }

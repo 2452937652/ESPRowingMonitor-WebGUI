@@ -275,7 +275,7 @@ describe("SessionManagerService", (): void => {
             );
         });
 
-        it("should auto-start and count all strokes when reconnecting mid-session after a device reboot", (): void => {
+        it("should count only the trigger stroke when reconnecting after a device reboot", (): void => {
             // record 20 strokes before the stop
             service.start();
             rawMetricsSubject.next({ ...mockRawMetrics, rawStrokeCount: 20, rawDistance: 19000 });
@@ -283,11 +283,16 @@ describe("SessionManagerService", (): void => {
             vi.mocked(mockDataRecorderService.addSessionData).mockClear();
 
             // app reconnects at stroke 3 of the new device session (skipped zero because connection delay)
-            rawMetricsSubject.next({ ...mockRawMetrics, rawStrokeCount: 3, rawDistance: 2850 });
+            rawMetricsSubject.next({
+                ...mockRawMetrics,
+                rawStrokeCount: 3,
+                rawDistance: 2850,
+                distPerStroke: 9.5,
+            });
 
             expect(service.sessionState()).toBe("running");
             expect(mockDataRecorderService.addSessionData).toHaveBeenLastCalledWith(
-                expect.objectContaining({ strokeCount: 3, distance: 2850 }),
+                expect.objectContaining({ strokeCount: 1, distance: 950 }),
             );
         });
 

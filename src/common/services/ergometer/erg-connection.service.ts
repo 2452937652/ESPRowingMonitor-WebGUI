@@ -1,10 +1,12 @@
 import { Injectable } from "@angular/core";
 import { MatSnackBar } from "@angular/material/snack-bar";
-import { filter, fromEvent, Observable, skip, startWith, take, takeUntil } from "rxjs";
+import { BehaviorSubject, filter, fromEvent, Observable, skip, startWith, take, takeUntil } from "rxjs";
 
 import {
     BATTERY_LEVEL_CHARACTERISTIC,
     BATTERY_LEVEL_SERVICE,
+    COMPLETED_STROKE_METRICS_V2_CHARACTERISTIC,
+    COMPLETED_STROKE_METRICS_V2_SERVICE,
     CYCLING_POWER_SERVICE,
     CYCLING_SPEED_AND_CADENCE_SERVICE,
     DELTA_TIMES_CHARACTERISTIC,
@@ -12,9 +14,10 @@ import {
     EXTENDED_CHARACTERISTIC,
     EXTENDED_METRICS_SERVICE,
     FITNESS_MACHINE_SERVICE,
-    HANDLE_FORCE_CURVE_CHARACTERISTIC,
     HANDLE_FORCES_CHARACTERISTIC,
     OTA_SERVICE,
+    PHYSICAL_FORCE_CURVE_V2_CHARACTERISTIC,
+    PHYSICAL_FORCE_CURVE_V2_SERVICE,
     SETTINGS_CHARACTERISTIC,
     SETTINGS_SERVICE,
     STROKE_SETTINGS_CHARACTERISTIC,
@@ -127,36 +130,6 @@ export class ErgConnectionService extends ErgConnections {
         }
     }
 
-    /**
-     * Connect to the distance-aware V2 curve when available.  This is an
-     * optional characteristic so the WebGUI can still work with older
-     * firmware through the legacy force-array characteristic.
-     */
-    async connectToHandleForceCurve(
-        gatt: BluetoothRemoteGATTServer,
-    ): Promise<void | BluetoothRemoteGATTCharacteristic> {
-        try {
-            this.handleForceCurveCharacteristic.next(
-                await connectToCharacteristic(
-                    gatt,
-                    EXTENDED_METRICS_SERVICE,
-                    HANDLE_FORCE_CURVE_CHARACTERISTIC,
-                ),
-            );
-
-            return this.handleForceCurveCharacteristic.value;
-        } catch (error) {
-            if (this._bluetoothDevice?.gatt?.connected) {
-                // missing V2 is expected when connecting to older firmware.
-                console.info("Distance-aware force curve is unavailable; using legacy force data:", error);
-
-                return;
-            }
-
-            throw error;
-        }
-    }
-
     async connectToMeasurement(
         gatt: BluetoothRemoteGATTServer,
     ): Promise<void | BluetoothRemoteGATTCharacteristic> {
@@ -215,6 +188,30 @@ export class ErgConnectionService extends ErgConnections {
         }
     }
 
+    async connectToPhysicalForceCurveV2(
+        gatt: BluetoothRemoteGATTServer,
+    ): Promise<void | BluetoothRemoteGATTCharacteristic> {
+        return this.connectToOptionalV2Characteristic(
+            gatt,
+            PHYSICAL_FORCE_CURVE_V2_SERVICE,
+            PHYSICAL_FORCE_CURVE_V2_CHARACTERISTIC,
+            this.physicalForceCurveV2Characteristic,
+            "Physical Force Curve V2",
+        );
+    }
+
+    async connectToCompletedStrokeMetricsV2(
+        gatt: BluetoothRemoteGATTServer,
+    ): Promise<void | BluetoothRemoteGATTCharacteristic> {
+        return this.connectToOptionalV2Characteristic(
+            gatt,
+            COMPLETED_STROKE_METRICS_V2_SERVICE,
+            COMPLETED_STROKE_METRICS_V2_CHARACTERISTIC,
+            this.completedStrokeMetricsV2Characteristic,
+            "Completed Stroke Metrics V2",
+        );
+    }
+
     connectionStatus$(): Observable<IErgConnectionStatus> {
         return this.connectionStatusSubject.asObservable();
     }
@@ -244,7 +241,8 @@ export class ErgConnectionService extends ErgConnections {
         this.strokeSettingsCharacteristic.next(undefined);
         this.extendedCharacteristic.next(undefined);
         this.handleForceCharacteristic.next(undefined);
-        this.handleForceCurveCharacteristic.next(undefined);
+        this.physicalForceCurveV2Characteristic.next(undefined);
+        this.completedStrokeMetricsV2Characteristic.next(undefined);
         this.measurementCharacteristic.next(undefined);
         this.connectionStatusSubject.next({ status: "disconnected" });
     }
@@ -270,6 +268,8 @@ export class ErgConnectionService extends ErgConnections {
                     BATTERY_LEVEL_SERVICE,
                     SETTINGS_SERVICE,
                     EXTENDED_METRICS_SERVICE,
+                    PHYSICAL_FORCE_CURVE_V2_SERVICE,
+                    COMPLETED_STROKE_METRICS_V2_SERVICE,
                 ],
             });
 
@@ -344,14 +344,13 @@ export class ErgConnectionService extends ErgConnections {
 
             await this.connectToMeasurement(gatt);
             await this.connectToExtended(gatt);
-            const handleForceCurveCharacteristic = await this.connectToHandleForceCurve(gatt);
-            if (handleForceCurveCharacteristic === undefined) {
-                await this.connectToHandleForces(gatt);
-            }
+            await this.connectToHandleForces(gatt);
             await this.connectToDeltaTimes(gatt);
             await this.connectToSettings(gatt);
             await this.connectToStrokeSettings(gatt);
             await this.connectToBattery(gatt);
+            await this.connectToPhysicalForceCurveV2(gatt);
+            await this.connectToCompletedStrokeMetricsV2(gatt);
 
             this.connectionStatusSubject.next({
                 deviceName:
@@ -388,6 +387,29 @@ export class ErgConnectionService extends ErgConnections {
 
         this.snackBar.open("Ergometer Monitor disconnected", "Dismiss");
     };
+
+    private async connectToOptionalV2Characteristic(
+        gatt: BluetoothRemoteGATTServer,
+        serviceUUID: string,
+        characteristicUUID: string,
+        characteristicSubject: BehaviorSubject<BluetoothRemoteGATTCharacteristic | undefined>,
+        featureName: string,
+    ): Promise<void | BluetoothRemoteGATTCharacteristic> {
+        characteristicSubject.next(undefined);
+        try {
+            characteristicSubject.next(await connectToCharacteristic(gatt, serviceUUID, characteristicUUID));
+
+            return characteristicSubject.value;
+        } catch (error) {
+            if (this._bluetoothDevice?.gatt?.connected) {
+                console.info(`${featureName} service is unavailable; continuing without V2 metrics`, error);
+
+                return;
+            }
+
+            throw error;
+        }
+    }
 
     private reconnectHandler: (event: BluetoothAdvertisingEvent) => void = (
         event: BluetoothAdvertisingEvent,

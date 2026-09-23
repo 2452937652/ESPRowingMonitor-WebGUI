@@ -19,10 +19,39 @@ import ChartDataLabels from "chartjs-plugin-datalabels";
 import { BaseChartDirective, provideCharts } from "ng2-charts";
 import { afterEach, beforeEach, describe, expect, it, Mock, vi } from "vitest";
 
-import { Config, ICalculatedMetrics, IDisplayConfig } from "../../../common/common.interfaces";
+import {
+    Config,
+    ICalculatedMetrics,
+    IDisplayConfig,
+    IForceCurve,
+    IForceCurvePoint,
+} from "../../../common/common.interfaces";
 
 import { createMockMetrics } from "./dashboard-tile.test.helpers";
 import { ForceCurveTileComponent } from "./force-curve-tile.component";
+
+const physicalCurve = (
+    points: Array<{ distance: number; elapsedTime: number; force: number }>,
+): IForceCurve => ({
+    strokeId: 1,
+    driveLength: points.at(-1)?.distance ?? 0,
+    driveDurationUs: Math.round((points.at(-1)?.elapsedTime ?? 1) * 1_000_000),
+    samples: points.map(
+        ({
+            distance,
+            elapsedTime,
+            force,
+        }: {
+            distance: number;
+            elapsedTime: number;
+            force: number;
+        }): IForceCurvePoint => ({
+            distance,
+            elapsedTimeUs: Math.round(elapsedTime * 1_000_000),
+            force,
+        }),
+    ),
+});
 
 describe("ForceCurveTileComponent", (): void => {
     let component: ForceCurveTileComponent;
@@ -431,12 +460,12 @@ describe("ForceCurveTileComponent", (): void => {
                 displayForceCurve: {
                     strokeId: 1,
                     driveLength: 1.4,
-                    driveDuration: 1.2,
+                    driveDurationUs: 1_200_000,
                     isDriveLengthAnomalous: false,
                     samples: [
-                        { distance: 0, elapsedTime: 0, force: 10 },
-                        { distance: 0.7, elapsedTime: 0.6, force: 90 },
-                        { distance: 1.4, elapsedTime: 1.2, force: 0 },
+                        { distance: 0, elapsedTimeUs: 0, force: 10 },
+                        { distance: 0.7, elapsedTimeUs: 600_000, force: 90 },
+                        { distance: 1.4, elapsedTimeUs: 1_200_000, force: 0 },
                     ],
                 },
             });
@@ -452,11 +481,11 @@ describe("ForceCurveTileComponent", (): void => {
                 ...mockInitialMetrics,
                 driveLength: 2.4,
                 forceCurveStatus: "complete",
-                forceCurve: [
+                forceCurve: physicalCurve([
                     { distance: 0, elapsedTime: 0, force: 10 },
                     { distance: 1.2, elapsedTime: 0.5, force: 100 },
                     { distance: 2.4, elapsedTime: 1, force: 0 },
-                ],
+                ]),
             });
             await fixture.whenStable();
             expect((component.forceChartOptions().scales?.x as { max: number }).max).toBe(3);
@@ -465,10 +494,10 @@ describe("ForceCurveTileComponent", (): void => {
                 ...mockInitialMetrics,
                 driveLength: 1.4,
                 forceCurveStatus: "complete",
-                forceCurve: [
+                forceCurve: physicalCurve([
                     { distance: 0, elapsedTime: 0, force: 10 },
                     { distance: 1.4, elapsedTime: 1, force: 0 },
-                ],
+                ]),
             });
             await fixture.whenStable();
             expect((component.forceChartOptions().scales?.x as { max: number }).max).toBe(2);
@@ -487,11 +516,11 @@ describe("ForceCurveTileComponent", (): void => {
                 ...mockInitialMetrics,
                 driveLength: 2.4,
                 forceCurveStatus: "complete",
-                forceCurve: [
+                forceCurve: physicalCurve([
                     { distance: 0, elapsedTime: 0, force: 10 },
                     { distance: 1.2, elapsedTime: 0.5, force: 650 },
                     { distance: 2.4, elapsedTime: 1, force: 0 },
-                ],
+                ]),
             });
             await fixture.whenStable();
 
@@ -521,10 +550,10 @@ describe("ForceCurveTileComponent", (): void => {
                 ...mockInitialMetrics,
                 driveLength: 2.4,
                 forceCurveStatus: "complete",
-                forceCurve: [
+                forceCurve: physicalCurve([
                     { distance: 0, elapsedTime: 0, force: 10 },
                     { distance: 2.4, elapsedTime: 1, force: 650 },
-                ],
+                ]),
             });
             await fixture.whenStable();
 
@@ -552,17 +581,19 @@ describe("ForceCurveTileComponent", (): void => {
                 driveLength: 61.37,
                 isDriveLengthAnomalous: true,
                 forceCurveStatus: "complete",
-                forceCurve: [
+                forceCurve: physicalCurve([
                     { distance: 0, elapsedTime: 0, force: 10 },
                     { distance: 61.37, elapsedTime: 62, force: 0 },
-                ],
+                ]),
             });
             await fixture.whenStable();
 
             const points = component.handleForcesChart().datasets[0].data as Array<Point>;
             expect(points).toContainEqual({ x: 61.37, y: 0 });
             expect((component.forceChartOptions().scales?.x as { max: number }).max).toBe(2);
-            expect(component.forceChartOptions().plugins?.legend?.title?.text).toContain("Anomalous drive: 6137 cm");
+            expect(component.forceChartOptions().plugins?.legend?.title?.text).toContain(
+                "Anomalous drive: 6137 cm",
+            );
         });
 
         it("should map force array to Point format with sequential x coordinates", async (): Promise<void> => {
