@@ -277,6 +277,43 @@ describe("SessionManagerService V2 stroke identity", (): void => {
 
         expect(context.service.sessionState()).toBe("stopped");
     });
+
+    it("counts device strokes missed during a disconnect in the session total", (): void => {
+        const context = setupSessionManagerTestBed();
+        context.configSubject.next(withSessionConfig({ autoSession: "off" }));
+        context.rawMetricsSubject.next(
+            v2Metrics({ sourceEpoch: 7, sourceStrokeId: 1, rawStrokeCount: 1, rawDistance: 950 }),
+        );
+        let latestMetrics: ISessionCalculatedMetrics | undefined;
+        context.service.sessionMetrics$.subscribe((metrics: ISessionCalculatedMetrics): void => {
+            latestMetrics = metrics;
+        });
+        context.service.start();
+
+        emitCurrent(
+            context,
+            v2Metrics({ sourceEpoch: 7, sourceStrokeId: 2, rawStrokeCount: 2, rawDistance: 1_900 }),
+        );
+        emitCurrent(
+            context,
+            v2Metrics({
+                sourceEpoch: 8,
+                sourceStrokeId: 5,
+                rawStrokeCount: 5,
+                rawDistance: 4_750,
+                distPerStroke: 0,
+            }),
+        );
+
+        expect(latestMetrics).toEqual(
+            expect.objectContaining({ sourceEpoch: 8, strokeCount: 4, distance: 3_800 }),
+        );
+        expect(context.mockDataRecorderService.upsertSessionStroke).toHaveBeenCalledTimes(2);
+        expect(context.mockDataRecorderService.upsertSessionStroke).toHaveBeenLastCalledWith(
+            expect.objectContaining({ strokeCount: 4, distance: 3_800, sourceEpoch: 8, sourceStrokeId: 5 }),
+            expect.anything(),
+        );
+    });
 });
 
 function emitCurrent(

@@ -900,6 +900,13 @@ export class SessionManagerService {
         key: string,
         records: Map<string, SessionStrokeRecord>,
     ): SessionAccumulator {
+        const strokeDelta: number = SessionManagerService.rawStrokeCounterDelta(
+            accumulator.previousRawMetrics,
+            incoming,
+        );
+        if (strokeDelta === 0) {
+            return accumulator;
+        }
         const distanceDelta: number | undefined = SessionManagerService.keyedDistanceDelta(
             accumulator.previousRawMetrics,
             incoming,
@@ -909,7 +916,7 @@ export class SessionManagerService {
         }
 
         const distance: number = accumulator.sessionMetrics.distance + distanceDelta;
-        const strokeCount: number = accumulator.sessionMetrics.strokeCount + 1;
+        const strokeCount: number = accumulator.sessionMetrics.strokeCount + strokeDelta;
         const workContribution: number = SessionManagerService.v2WorkContribution(incoming);
         const totalWork: number = accumulator.sessionMetrics.totalWork + workContribution;
         const rowMetrics: ISessionCalculatedMetrics = SessionManagerService.toSessionRowMetrics(
@@ -1271,13 +1278,26 @@ export class SessionManagerService {
         previous: IRawCalculatedMetrics,
         current: IRawCalculatedMetrics,
     ): boolean {
-        return (
-            current.rawStrokeCount > previous.rawStrokeCount ||
-            (previous.rawStrokeCount >= UINT16_HALF_RANGE &&
-                current.rawStrokeCount < UINT16_HALF_RANGE &&
-                current.rawStrokeCount < previous.rawStrokeCount &&
-                current.rawDistance >= previous.rawDistance)
-        );
+        return SessionManagerService.rawStrokeCounterDelta(previous, current) > 0;
+    }
+
+    private static rawStrokeCounterDelta(
+        previous: IRawCalculatedMetrics,
+        current: IRawCalculatedMetrics,
+    ): number {
+        if (current.rawStrokeCount > previous.rawStrokeCount) {
+            return current.rawStrokeCount - previous.rawStrokeCount;
+        }
+        if (
+            previous.rawStrokeCount >= UINT16_HALF_RANGE &&
+            current.rawStrokeCount < UINT16_HALF_RANGE &&
+            current.rawStrokeCount < previous.rawStrokeCount &&
+            current.rawDistance >= previous.rawDistance
+        ) {
+            return current.rawStrokeCount + UINT16_RANGE - previous.rawStrokeCount;
+        }
+
+        return 0;
     }
 
     private static seedImmediatelyBeforeStroke(
