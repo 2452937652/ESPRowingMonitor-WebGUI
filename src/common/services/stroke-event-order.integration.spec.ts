@@ -164,6 +164,12 @@ describe("stroke event ordering integration", (): void => {
         sessionManager.start();
         measurementSubject.next(baseMetrics(9));
 
+        expect(latestSessionMetrics(emitted)).toMatchObject({
+            strokeCount: 9,
+            isExtendedMetricsPending: true,
+            totalWork: 0,
+        });
+
         const pending: IExtendedMetrics = {
             avgStrokePower: 0,
             driveDuration: 1_250_000,

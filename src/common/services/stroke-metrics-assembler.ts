@@ -216,7 +216,10 @@ export class StrokeMetricsAssembler {
             { peakForce: 0, peakForceIndex: 0 },
         );
         const isDriveLengthAnomalous = driveLength > DRIVE_LENGTH_ANOMALY_THRESHOLD_METERS;
-        const isExtendedMetricsPending = extended.recoveryMetricsComplete === false;
+        // Base metrics often arrive before the stroke-keyed extended packet.
+        // Until then, zero power/time values are unknown, not measured zeros.
+        // Legacy packets have no completion flag, so only their absence is pending.
+        const isExtendedMetricsPending = record.extended === undefined || extended.recoveryMetricsComplete === false;
 
         return {
             avgStrokePower: extended.avgStrokePower,
