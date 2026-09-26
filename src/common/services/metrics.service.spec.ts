@@ -210,6 +210,69 @@ describe("MetricsService", (): void => {
         });
     });
 
+    describe("legacy stream regression", (): void => {
+        it("retains stroke metrics during wheel updates and measures the full next cycle", (): void => {
+            service = TestBed.inject(MetricsService);
+            const output: Array<IRawCalculatedMetrics> = [];
+            const sub = service.rawMetrics$.subscribe((value: IRawCalculatedMetrics): void => {
+                output.push(value);
+            });
+            measurementSubject.next({ distance: 0, revTime: 0, strokeCount: 0, strokeTime: 0 });
+            extendedSubject.next(mockExtendedMetrics);
+            measurementSubject.next({ distance: 800, revTime: 2e6, strokeCount: 1, strokeTime: 3e6 });
+            measurementSubject.next({ distance: 1300, revTime: 4e6, strokeCount: 1, strokeTime: 3e6 });
+            expect(output.at(-1)).toMatchObject({ strokeRate: 20, distPerStroke: 8 });
+            measurementSubject.next({ distance: 1700, revTime: 5e6, strokeCount: 2, strokeTime: 6e6 });
+            expect(output.at(-1)).toMatchObject({ strokeRate: 20, distPerStroke: 9 });
+            measurementSubject.next({ distance: 1700, revTime: 5e6, strokeCount: 2, strokeTime: 6e6 });
+            expect(output.at(-1)).toMatchObject({ strokeRate: 0, distPerStroke: 9 });
+            sub.unsubscribe();
+        });
+
+        it("updates drive length when machine settings arrive after the force array", (): void => {
+            service = TestBed.inject(MetricsService);
+            const configured = createMockRowerSettings({ sprocketRadius: 1.5, impulsePerRevolution: 6 });
+            mockRowerSettingsSignal.set({
+                ...configured,
+                rowingSettings: {
+                    ...configured.rowingSettings,
+                    machineSettings: {
+                        ...configured.rowingSettings.machineSettings,
+                        sprocketRadius: 0,
+                        impulsePerRevolution: 0,
+                    },
+                },
+            });
+            const output: Array<IRawCalculatedMetrics> = [];
+            const sub = service.rawMetrics$.subscribe((value: IRawCalculatedMetrics): void => {
+                output.push(value);
+            });
+            measurementSubject.next(mockBaseMetrics);
+            handleForcesSubject.next([10, 20, 10]);
+            measurementSubject.next({ ...mockBaseMetrics, strokeCount: 11, distance: 1100 });
+            expect(output.at(-1)?.driveLength).toBe(0);
+            mockRowerSettingsSignal.set(configured);
+            TestBed.tick();
+            expect(output.at(-1)!.driveLength).toBeGreaterThan(0);
+            sub.unsubscribe();
+        });
+
+        it("keeps official extended data available when only one optional V2 service exists", (): void => {
+            physicalForceCurveV2CharacteristicSubject.next({} as BluetoothRemoteGATTCharacteristic);
+            service = TestBed.inject(MetricsService);
+            const output: Array<IRawCalculatedMetrics> = [];
+            const sub = service.rawMetrics$.subscribe((value: IRawCalculatedMetrics): void => {
+                output.push(value);
+            });
+            measurementSubject.next(mockBaseMetrics);
+            extendedSubject.next(mockExtendedMetrics);
+            measurementSubject.next({ ...mockBaseMetrics, strokeCount: 11, distance: 1100 });
+            expect(output.at(-1)).toMatchObject({ recoveryDuration: 2, avgStrokePower: 100 });
+            expect(output.at(-1)?.sourceEpoch).toBeUndefined();
+            sub.unsubscribe();
+        });
+    });
+
     describe("Calculation Methods", (): void => {
         beforeEach((): void => {
             service = TestBed.inject(MetricsService);
@@ -818,7 +881,7 @@ describe("MetricsService", (): void => {
             });
         });
 
-        it("disables unkeyed legacy supplements when only one V2 characteristic is available", (): void => {
+        it("uses only the official legacy stream when V2 services are incomplete", (): void => {
             completedStrokeMetricsV2CharacteristicSubject.next(undefined);
             const partialAvailabilityWarning = vi
                 .spyOn(console, "warn")
@@ -837,15 +900,20 @@ describe("MetricsService", (): void => {
                 strokeCount: 8,
             });
 
+            measurementSubject.next({
+                revTime: 2_000_000,
+                distance: 1_200,
+                strokeTime: 3_000_000,
+                strokeCount: 9,
+            });
+
             expect(partialAvailabilityWarning).toHaveBeenCalledOnce();
             expect(emitted).toHaveLength(1);
             expect(emitted[0]).toMatchObject({
-                forceCurveStatus: "pending",
-                isExtendedMetricsPending: true,
-                handleForces: [],
-                avgStrokePower: 0,
-                recoveryDuration: 0,
-                dragFactor: 0,
+                handleForces: [90, 110],
+                avgStrokePower: 100,
+                recoveryDuration: 2,
+                dragFactor: 120,
             });
 
             partialAvailabilityWarning.mockRestore();

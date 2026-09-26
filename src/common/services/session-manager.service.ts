@@ -98,6 +98,7 @@ interface V2SessionRowUpdate {
 
 interface SessionProgress {
     sessionMetrics: ISessionCalculatedMetrics;
+    displayMetrics?: ISessionCalculatedMetrics;
     v2RowUpdate?: V2SessionRowUpdate;
 }
 
@@ -113,6 +114,7 @@ export class SessionManagerService {
     readonly sessionState: Signal<SessionState>;
     readonly elapsedTime: Signal<number>;
     readonly sessionMetrics$: Observable<ISessionCalculatedMetrics>;
+    readonly displayMetrics$: Observable<ISessionCalculatedMetrics>;
 
     private sessionState$: BehaviorSubject<SessionState> = new BehaviorSubject<SessionState>("stopped");
     private _elapsedTime: WritableSignal<number> = signal<number>(0);
@@ -197,6 +199,7 @@ export class SessionManagerService {
                     filter((): boolean => this.sessionState() === "running"),
                     map((acc: SessionAccumulator): SessionProgress => ({
                         sessionMetrics: acc.sessionMetrics,
+                        displayMetrics: SessionManagerService.completedRecoveryDisplay(acc),
                         v2RowUpdate: acc.v2RowUpdate,
                     })),
                     distinctUntilChanged(
@@ -217,6 +220,14 @@ export class SessionManagerService {
         this.sessionMetrics$ = this.sessionProgress$.pipe(
             map((progress: SessionProgress): ISessionCalculatedMetrics => progress.sessionMetrics),
             distinctUntilChanged(SessionManagerService.areSessionMetricsEqual),
+            shareReplay({ bufferSize: 1, refCount: true }),
+        );
+
+        this.displayMetrics$ = this.sessionProgress$.pipe(
+            map(
+                (progress: SessionProgress): ISessionCalculatedMetrics =>
+                    progress.displayMetrics ?? progress.sessionMetrics,
+            ),
             shareReplay({ bufferSize: 1, refCount: true }),
         );
 
@@ -575,6 +586,31 @@ export class SessionManagerService {
 
                 this.pause();
             });
+    }
+
+    /** Late recovery belongs to its original row, but can be the latest completed value on the dashboard. */
+    private static completedRecoveryDisplay(accumulator: SessionAccumulator): ISessionCalculatedMetrics {
+        const current = accumulator.sessionMetrics;
+        if (current.isExtendedMetricsPending !== true || current.strokeCount === 0) return current;
+        let latest: SessionStrokeRecord | undefined;
+        for (const record of accumulator.sourceRecords.values()) {
+            if (
+                record.isSessionStroke &&
+                record.sourceEpoch === current.sourceEpoch &&
+                record.metrics.isExtendedMetricsPending === false &&
+                (latest === undefined || record.sequence > latest.sequence)
+            )
+                latest = record;
+        }
+        if (latest === undefined) return current;
+
+        return {
+            ...current,
+            avgStrokePower: latest.metrics.avgStrokePower,
+            recoveryDuration: latest.metrics.recoveryDuration,
+            dragFactor: latest.metrics.dragFactor,
+            isExtendedMetricsPending: false,
+        };
     }
 
     private static accumulateLegacyMetrics(
@@ -1271,7 +1307,17 @@ export class SessionManagerService {
         previous: IRawCalculatedMetrics,
         current: IRawCalculatedMetrics,
     ): boolean {
-        return SessionManagerService.rawStrokeCounterAdvanced(previous, current);
+        // legacy reconnects have no epoch; both counters regressing is the reset
+        // evidence already used by accumulation. A lone backward ID is stale.
+        const isLegacyReset =
+            current.sourceEpoch === undefined &&
+            previous.sourceEpoch === undefined &&
+            SessionManagerService.hasValidRawCounters(current) &&
+            current.rawStrokeCount > 0 &&
+            current.rawStrokeCount < previous.rawStrokeCount &&
+            current.rawDistance < previous.rawDistance;
+
+        return isLegacyReset || SessionManagerService.rawStrokeCounterAdvanced(previous, current);
     }
 
     private static rawStrokeCounterAdvanced(

@@ -1,8 +1,9 @@
 import { DestroyRef, Injectable } from "@angular/core";
-import { takeUntilDestroyed } from "@angular/core/rxjs-interop";
+import { takeUntilDestroyed, toObservable } from "@angular/core/rxjs-interop";
 import {
     BehaviorSubject,
     combineLatest,
+    defer,
     distinctUntilChanged,
     EMPTY,
     filter,
@@ -25,6 +26,7 @@ import {
     IHeartRate,
     IHRConnectionStatus,
     IRawCalculatedMetrics,
+    IRowerSettings,
 } from "../common.interfaces";
 
 import { DataRecorderService } from "./data-recorder.service";
@@ -34,9 +36,17 @@ import { ErgMetricsService } from "./ergometer/erg-metric-data.service";
 import { ErgSettingsService } from "./ergometer/erg-settings.service";
 import { IPhysicalForceCurveV2 } from "./ergometer/physical-force-curve-v2-decoder";
 import { HeartRateService } from "./heart-rate/heart-rate.service";
+import { StrokeBaseObservation, StrokeBaseTracker } from "./stroke-base-tracker";
 import { IAssembledStrokeMetrics, StrokeMetricsAssembler } from "./stroke-metrics-assembler";
 
 const cmInM = 100;
+
+type LegacyMetricInput = [
+    [StrokeBaseObservation, StrokeBaseObservation],
+    IExtendedMetrics,
+    Array<number>,
+    IRowerSettings,
+];
 
 type MetricSourceMode = "offline" | "legacy" | "v2";
 
@@ -62,6 +72,9 @@ export class MetricsService {
         new BehaviorSubject<IAssembledStrokeMetrics | undefined>(undefined);
     private readonly strokeMetricUpdateSubject: Subject<IAssembledStrokeMetrics> =
         new Subject<IAssembledStrokeMetrics>();
+    private readonly settingsChanges$: Observable<IRowerSettings> = toObservable(
+        this.ergSettingsService.rowerSettings,
+    );
     private currentBaseStrokeId: number | undefined;
 
     constructor(
@@ -182,53 +195,57 @@ export class MetricsService {
 
     private streamLegacyMetrics$(): Observable<IRawCalculatedMetrics> {
         return combineLatest([
-            this.measurement$.pipe(pairwise()),
+            defer((): Observable<[StrokeBaseObservation, StrokeBaseObservation]> => {
+                const tracker = new StrokeBaseTracker();
+
+                return this.measurement$.pipe(
+                    map((base: IBaseMetrics): StrokeBaseObservation => ({
+                        base,
+                        stroke: tracker.accept(base),
+                    })),
+                    pairwise(),
+                );
+            }),
             this.streamExtended$(),
             this.handleForces$,
+            this.settingsChanges$.pipe(startWith(this.ergSettingsService.rowerSettings())),
         ]).pipe(
             withLatestFrom(this.streamPowerBalance$()),
-            map(
-                ([metricsInput, powerBalance]: [
-                    [[IBaseMetrics, IBaseMetrics], IExtendedMetrics, Array<number>],
-                    number,
-                ]): IRawCalculatedMetrics => {
-                    const [[baseMetricsPrevious, baseMetricsCurrent], extendedMetrics, handleForces]: [
-                        [IBaseMetrics, IBaseMetrics],
-                        IExtendedMetrics,
-                        Array<number>,
-                    ] = metricsInput;
-                    const { peakForce, peakForceIndex }: { peakForce: number; peakForceIndex: number } =
-                        handleForces.reduce(
-                            (
-                                accumulator: { peakForce: number; peakForceIndex: number },
-                                force: number,
-                                index: number,
-                            ): { peakForce: number; peakForceIndex: number } =>
-                                force > accumulator.peakForce
-                                    ? { peakForce: force, peakForceIndex: index }
-                                    : accumulator,
-                            { peakForce: 0, peakForceIndex: 0 },
-                        );
+            map(([metricsInput, powerBalance]: [LegacyMetricInput, number]): IRawCalculatedMetrics => {
+                const [[previous, current], extendedMetrics, handleForces]: LegacyMetricInput = metricsInput;
+                const baseMetricsPrevious = previous.base;
+                const baseMetricsCurrent = current.base;
+                const { peakForce, peakForceIndex }: { peakForce: number; peakForceIndex: number } =
+                    handleForces.reduce(
+                        (
+                            accumulator: { peakForce: number; peakForceIndex: number },
+                            force: number,
+                            index: number,
+                        ): { peakForce: number; peakForceIndex: number } =>
+                            force > accumulator.peakForce
+                                ? { peakForce: force, peakForceIndex: index }
+                                : accumulator,
+                        { peakForce: 0, peakForceIndex: 0 },
+                    );
 
-                    return {
-                        avgStrokePower: extendedMetrics.avgStrokePower,
-                        driveDuration: extendedMetrics.driveDuration / 1e6,
-                        recoveryDuration: extendedMetrics.recoveryDuration / 1e6,
-                        dragFactor: extendedMetrics.dragFactor,
-                        rawDistance: baseMetricsCurrent.distance,
-                        rawStrokeCount: baseMetricsCurrent.strokeCount,
-                        handleForces,
-                        peakForce,
-                        peakForcePositionNorm:
-                            handleForces.length > 1 ? (peakForceIndex / (handleForces.length - 1)) * 100 : 0,
-                        strokeRate: this.calculateStrokeRate(baseMetricsPrevious, baseMetricsCurrent),
-                        speed: this.calculateSpeed(baseMetricsPrevious, baseMetricsCurrent),
-                        distPerStroke: this.calculateStrokeDistance(baseMetricsPrevious, baseMetricsCurrent),
-                        driveLength: this.calculateDriveLength(handleForces.length),
-                        powerBalance,
-                    };
-                },
-            ),
+                return {
+                    avgStrokePower: extendedMetrics.avgStrokePower,
+                    driveDuration: extendedMetrics.driveDuration / 1e6,
+                    recoveryDuration: extendedMetrics.recoveryDuration / 1e6,
+                    dragFactor: extendedMetrics.dragFactor,
+                    rawDistance: baseMetricsCurrent.distance,
+                    rawStrokeCount: baseMetricsCurrent.strokeCount,
+                    handleForces,
+                    peakForce,
+                    peakForcePositionNorm:
+                        handleForces.length > 1 ? (peakForceIndex / (handleForces.length - 1)) * 100 : 0,
+                    strokeRate: current.stroke.strokeRate,
+                    speed: this.calculateSpeed(baseMetricsPrevious, baseMetricsCurrent),
+                    distPerStroke: current.stroke.distPerStroke,
+                    driveLength: this.calculateDriveLength(handleForces.length),
+                    powerBalance,
+                };
+            }),
         );
     }
 
@@ -261,14 +278,14 @@ export class MetricsService {
                             BluetoothRemoteGATTCharacteristic | undefined,
                             BluetoothRemoteGATTCharacteristic | undefined,
                         ]): MetricSourceMode => {
-                            if (physicalCurve !== undefined || completedMetrics !== undefined) {
-                                if (physicalCurve === undefined || completedMetrics === undefined) {
-                                    console.warn(
-                                        "V2 metric services are partially available; unkeyed legacy metrics are disabled",
-                                    );
-                                }
-
+                            if (physicalCurve !== undefined && completedMetrics !== undefined) {
                                 return "v2";
+                            }
+
+                            if (physicalCurve !== undefined || completedMetrics !== undefined) {
+                                console.warn(
+                                    "Incomplete V2 services; using the complete official legacy metric stream",
+                                );
                             }
 
                             return "legacy";
@@ -348,9 +365,9 @@ export class MetricsService {
             ...extendedFields,
             rawDistance: base.distance,
             rawStrokeCount: base.strokeCount,
-            strokeRate: this.calculateStrokeRate(previousBase, base),
+            strokeRate: this.calculateStrokeRate(assembly.previousStrokeBase ?? previousBase, base),
             speed: this.calculateSpeed(previousBase, base),
-            distPerStroke: this.calculateStrokeDistance(previousBase, base),
+            distPerStroke: this.calculateStrokeDistance(assembly.previousStrokeBase ?? previousBase, base),
             powerBalance: 0.5,
         };
     }

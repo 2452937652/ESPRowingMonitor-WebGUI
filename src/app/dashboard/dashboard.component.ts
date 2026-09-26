@@ -29,6 +29,7 @@ import { SessionManagerService } from "../../common/services/session-manager.ser
 import { UtilsService } from "../../common/services/utils.service";
 import { EMPTY_TREND_HISTORY, TrendHistory, TrendMetricKey } from "../../common/trend.interfaces";
 
+import { CompletedMetricsDisplay, updateCompletedMetricsDisplay } from "./completed-metrics-display";
 import {
     DASHBOARD_TILE_DEFINITIONS,
     DashboardContext,
@@ -260,7 +261,9 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
         );
 
         this.rowingData = toSignal(
-            this.sessionManager.sessionMetrics$.pipe(
+            (this.sessionManager.displayMetrics$ ?? this.sessionManager.sessionMetrics$).pipe(
+                scan(updateCompletedMetricsDisplay, {} as CompletedMetricsDisplay),
+                map((state: CompletedMetricsDisplay): ICalculatedMetrics => state.current!),
                 scan(
                     (
                         buffer: Array<ICalculatedMetrics>,
