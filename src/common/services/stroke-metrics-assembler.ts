@@ -17,6 +17,7 @@ export interface IAssembledStrokeMetrics {
     sourceStrokeId: number;
     previousBase: IBaseMetrics;
     previousStrokeBase?: IBaseMetrics;
+    strokeBase?: IBaseMetrics;
     base: IBaseMetrics;
     physicalCurve?: IPhysicalForceCurveV2;
     completedMetrics?: ICompletedStrokeMetricsV2;
@@ -35,6 +36,7 @@ interface IStrokeRecord {
     base?: IBaseMetrics;
     previousBase?: IBaseMetrics;
     previousStrokeBase?: IBaseMetrics;
+    strokeBase?: IBaseMetrics;
     physicalCurve?: IPhysicalForceCurveV2;
     completedMetrics?: ICompletedStrokeMetricsV2;
 }
@@ -118,6 +120,7 @@ export class StrokeMetricsAssembler {
         const record: IStrokeRecord = this.recordFor(sourceStrokeId);
         if (record.base === undefined) {
             record.previousStrokeBase = { ...(this.strokeBoundary ?? previousBase) };
+            record.strokeBase = { ...base };
             this.strokeBoundary = { ...base };
         }
         record.previousBase = { ...previousBase };
@@ -555,6 +558,7 @@ export class StrokeMetricsAssembler {
                 sourceStrokeId: record.sourceStrokeId,
                 previousBase: { ...previousBase },
                 previousStrokeBase: record.previousStrokeBase,
+                strokeBase: record.strokeBase,
                 base: { ...base },
             };
         }
@@ -564,6 +568,7 @@ export class StrokeMetricsAssembler {
             sourceStrokeId: record.sourceStrokeId,
             previousBase: { ...previousBase },
             previousStrokeBase: record.previousStrokeBase,
+            strokeBase: record.strokeBase,
             base: { ...base },
             physicalCurve: physicalCurve === undefined ? undefined : this.copyPhysicalCurve(physicalCurve),
             completedMetrics:

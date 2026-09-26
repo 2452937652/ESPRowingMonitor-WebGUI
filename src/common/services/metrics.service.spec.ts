@@ -689,6 +689,33 @@ describe("MetricsService", (): void => {
     });
 
     describe("V2 stroke assembly", (): void => {
+        it("keeps completed stroke cadence and distance fixed across wheel updates and late recovery", (): void => {
+            service = TestBed.inject(MetricsService);
+            const rows: Array<IRawCalculatedMetrics> = [];
+            const subscription = service.rawMetrics$.subscribe((row: IRawCalculatedMetrics): void => {
+                rows.push(row);
+            });
+            measurementSubject.next({ strokeCount: 1, strokeTime: 3e6, revTime: 3e6, distance: 1000 });
+            measurementSubject.next({ strokeCount: 2, strokeTime: 6e6, revTime: 6e6, distance: 1900 });
+            measurementSubject.next({ strokeCount: 2, strokeTime: 6e6, revTime: 7e6, distance: 2200 });
+            completedStrokeMetricsV2Subject.next({
+                strokeId: 2,
+                driveDurationUs: 1e6,
+                recovery: { status: "complete", durationUs: 2e6, avgStrokePowerW: 100, dragFactor: 100 },
+            });
+            expect(
+                rows
+                    .slice(1)
+                    .every(
+                        (row: IRawCalculatedMetrics): boolean =>
+                            row.strokeRate === 20 && row.distPerStroke === 9,
+                    ),
+            ).toBe(true);
+            expect(rows.at(-1)?.recoveryDuration).toBe(2);
+            measurementSubject.next({ strokeCount: 3, strokeTime: 9e6, revTime: 9e6, distance: 2800 });
+            expect(rows.at(-1)).toMatchObject({ strokeRate: 20, distPerStroke: 9 });
+            subscription.unsubscribe();
+        });
         beforeEach((): void => {
             service = TestBed.inject(MetricsService);
             physicalForceCurveV2CharacteristicSubject.next({} as BluetoothRemoteGATTCharacteristic);

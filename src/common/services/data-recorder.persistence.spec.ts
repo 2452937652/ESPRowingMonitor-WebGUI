@@ -14,6 +14,26 @@ import { appDB } from "../utils/app-database";
 import { DataRecorderService } from "./data-recorder.service";
 
 describe("DataRecorderService v5 persistence", (): void => {
+    it("preserves measured cadence and distance in a same-key update and exports recorded speed", async (): Promise<void> => {
+        const identity = { sourceEpoch: 10, sourceStrokeId: 4 };
+        await service.upsertSessionStroke(sessionData(), identity);
+        await service.upsertSessionStroke(
+            { ...sessionData(), strokeRate: 0, distPerStroke: 0, recoveryDuration: 2 },
+            identity,
+        );
+        const internals = service as unknown as {
+            buildExportSession(id: number): Promise<IExportSession>;
+            formatSessionCsv(session: IExportSession): string;
+        };
+        const exported = await internals.buildExportSession(fixedTime);
+        expect(exported.records).toHaveLength(1);
+        expect(exported.records[0]).toMatchObject({ strokeRate: 24, distPerStroke: 8, recoveryDuration: 2 });
+        // a prior affected recording still has valid measured speed even with zero cadence.
+        exported.records[0].strokeRate = 0;
+        exported.records[0].distPerStroke = 0;
+        const values = internals.formatSessionCsv(exported).trim().split("\n")[1].split(",");
+        expect(values[4]).toBe("15.12");
+    });
     const fixedTime = 1700000000000;
     let service: DataRecorderService;
 
