@@ -106,6 +106,8 @@ export interface IExportHandleForces {
 export type ILapExport = Omit<ILapEntity, "sessionId">;
 
 export interface IExportSession {
+    /** Identifies the exporting browser build, not the firmware or original recording build. */
+    exportedBy?: { metricsRevision: string; buildTime: string };
     sessionId: number;
     deviceName?: string;
     records: Array<IExportRecord>;

@@ -228,7 +228,7 @@
         </div>
     </div>
     <div versionInfo class="items-center">
-        <span>GUI Version: {{ compileDate | date: "yyMMddHHmmss" }}</span>
+        <span>GUI Version: {{ compileDate | date: "yyMMddHHmmss" }} / {{ metricsRevision }}</span>
         @if (isServiceWorkerAvailable) {
             <button
                 matTooltipShowDelay="1000"

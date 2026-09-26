@@ -9,6 +9,62 @@ import {
 } from "./session-manager.test.helpers";
 
 describe("SessionManagerService V2 stroke identity", (): void => {
+    it("counts coasting distance once and retains the measured stroke through zero-valued supplements", (): void => {
+        const context = setupSessionManagerTestBed();
+        context.configSubject.next(withSessionConfig({ autoSession: "off" }));
+        context.rawMetricsSubject.next(
+            v2Metrics({ sourceStrokeId: 1, rawStrokeCount: 1, rawDistance: 1000 }),
+        );
+        const values: Array<ISessionCalculatedMetrics> = [];
+        context.service.sessionMetrics$.subscribe((row: ISessionCalculatedMetrics): void => {
+            values.push(row);
+        });
+        context.service.start();
+        emitCurrent(
+            context,
+            v2Metrics({
+                sourceStrokeId: 2,
+                rawStrokeCount: 2,
+                rawDistance: 1900,
+                strokeRate: 20,
+                distPerStroke: 9,
+            }),
+        );
+        emitCurrent(
+            context,
+            v2Metrics({
+                sourceStrokeId: 2,
+                rawStrokeCount: 2,
+                rawDistance: 2200,
+                strokeRate: 0,
+                distPerStroke: 0,
+            }),
+        );
+        expect(values.at(-1)).toMatchObject({ distance: 1200, strokeRate: 20, distPerStroke: 9 });
+        emitCurrent(
+            context,
+            v2Metrics({
+                sourceStrokeId: 3,
+                rawStrokeCount: 3,
+                rawDistance: 2800,
+                strokeRate: 20,
+                distPerStroke: 9,
+            }),
+        );
+        expect(values.at(-1)).toMatchObject({ distance: 1800, strokeCount: 2 });
+        context.strokeMetricUpdatesSubject.next(
+            v2Metrics({
+                sourceStrokeId: 2,
+                rawStrokeCount: 2,
+                rawDistance: 2200,
+                strokeRate: 0,
+                distPerStroke: 0,
+                isExtendedMetricsPending: false,
+                recoveryDuration: 2,
+            }),
+        );
+        expect(values.at(-1)?.distance).toBe(1800);
+    });
     it("starts a new session at logical zero with the current epoch and raw counters as its baseline", (): void => {
         const context = setupSessionManagerTestBed();
         context.configSubject.next(withSessionConfig({ autoSession: "off" }));

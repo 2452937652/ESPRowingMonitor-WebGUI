@@ -355,6 +355,7 @@ export class MetricsService {
 
     private buildV2RawMetrics(assembly: IAssembledStrokeMetrics): IRawCalculatedMetrics {
         const { base, completedMetrics, physicalCurve, previousBase }: IAssembledStrokeMetrics = assembly;
+        const strokeBase = assembly.strokeBase ?? base;
         const forceFields = this.buildV2ForceFields(physicalCurve);
         const extendedFields = this.buildV2ExtendedFields(completedMetrics, physicalCurve);
 
@@ -365,9 +366,12 @@ export class MetricsService {
             ...extendedFields,
             rawDistance: base.distance,
             rawStrokeCount: base.strokeCount,
-            strokeRate: this.calculateStrokeRate(assembly.previousStrokeBase ?? previousBase, base),
+            strokeRate: this.calculateStrokeRate(assembly.previousStrokeBase ?? previousBase, strokeBase),
             speed: this.calculateSpeed(previousBase, base),
-            distPerStroke: this.calculateStrokeDistance(assembly.previousStrokeBase ?? previousBase, base),
+            distPerStroke: this.calculateStrokeDistance(
+                assembly.previousStrokeBase ?? previousBase,
+                strokeBase,
+            ),
             powerBalance: 0.5,
         };
     }

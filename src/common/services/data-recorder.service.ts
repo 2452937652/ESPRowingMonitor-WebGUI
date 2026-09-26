@@ -5,6 +5,8 @@ import { ImportProgress } from "dexie-export-import/dist/import";
 import { filter, from, Observable } from "rxjs";
 
 import { IForceCurvePoint, ISessionData, ISessionSummary } from "../common.interfaces";
+import { METRICS_REVISION } from "../data/metrics-revision";
+import { versionInfo } from "../data/version";
 import {
     IConnectedDeviceEntity,
     IDeltaTimesEntity,
@@ -487,6 +489,7 @@ export class DataRecorderService {
 
                 return {
                     sessionId,
+                    exportedBy: { metricsRevision: METRICS_REVISION, buildTime: versionInfo.timeStamp },
                     deviceName: connectedDevice?.deviceName,
                     records,
                     handleForces,
@@ -516,11 +519,12 @@ export class DataRecorderService {
             sourceEpoch: context.hasV2Identity ? identity.sourceEpoch : undefined,
             sourceStrokeId: context.hasV2Identity ? identity.sourceStrokeId : undefined,
             distance: rowingData.distance,
-            distPerStroke: rowingData.distPerStroke,
+            distPerStroke:
+                rowingData.distPerStroke > 0 ? rowingData.distPerStroke : (existing?.distPerStroke ?? 0),
             driveDuration: rowingData.driveDuration,
             speed: rowingData.speed,
             strokeCount: rowingData.strokeCount,
-            strokeRate: rowingData.strokeRate,
+            strokeRate: rowingData.strokeRate > 0 ? rowingData.strokeRate : (existing?.strokeRate ?? 0),
             elapsedTime: existing?.elapsedTime ?? rowingData.elapsedTime,
             heartRate: existing?.heartRate ?? rowingData.heartRate,
             ...this.mergeExtendedMetrics(rowingData, identity, existing),
@@ -722,6 +726,9 @@ export class DataRecorderService {
     }
 
     private calculateExportSpeed(data: IExportRecord, previous: IExportRecord): number {
+        if (Number.isFinite(data.speed) && data.speed >= 0) {
+            return data.speed;
+        }
         if (previous.distance !== 0) {
             return (data.strokeRate / 60) * data.distPerStroke;
         }

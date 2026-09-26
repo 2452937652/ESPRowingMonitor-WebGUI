@@ -728,6 +728,7 @@ export class SessionManagerService {
                 existing,
                 records,
                 key,
+                isPaused,
             );
         }
 
@@ -817,6 +818,7 @@ export class SessionManagerService {
         existing: SessionStrokeRecord,
         records: Map<string, SessionStrokeRecord>,
         key: string,
+        isPaused: boolean,
     ): SessionAccumulator {
         const mergedMetrics: IRawCalculatedMetrics = SessionManagerService.mergeV2Metrics(
             existing.metrics,
@@ -832,10 +834,16 @@ export class SessionManagerService {
         const workDifference: number = nextWorkContribution - existing.workContribution;
         const totalWork: number =
             accumulator.sessionMetrics.totalWork + (workDifference > 0 ? workDifference : 0);
+        // wheel distance keeps advancing within the same stroke. Count it once
+        // for the active stroke, never for a late supplement or paused movement.
+        const distanceDelta =
+            !isPaused && accumulator.activeSourceKey === key
+                ? Math.max(0, mergedMetrics.rawDistance - accumulator.previousRawMetrics.rawDistance)
+                : 0;
         const rowMetrics: ISessionCalculatedMetrics | undefined = existing.rowMetrics
             ? SessionManagerService.toSessionRowMetrics(
                   mergedMetrics,
-                  existing.rowMetrics.distance,
+                  existing.rowMetrics.distance + distanceDelta,
                   existing.rowMetrics.strokeCount,
                   totalWork,
               )
@@ -862,7 +870,7 @@ export class SessionManagerService {
                 ? {
                       ...SessionManagerService.toSessionRowMetrics(
                           mergedMetrics,
-                          accumulator.sessionMetrics.distance,
+                          accumulator.sessionMetrics.distance + distanceDelta,
                           accumulator.sessionMetrics.strokeCount,
                           totalWork,
                       ),
@@ -1116,6 +1124,9 @@ export class SessionManagerService {
         return {
             ...existing,
             ...incoming,
+            // same-key supplements must not erase an already measured stroke.
+            strokeRate: incoming.strokeRate > 0 ? incoming.strokeRate : existing.strokeRate,
+            distPerStroke: incoming.distPerStroke > 0 ? incoming.distPerStroke : existing.distPerStroke,
             ...(shouldKeepCurve || isConflictingCompleteCurve
                 ? {
                       forceCurve: existing.forceCurve,

@@ -49,6 +49,7 @@ import {
     IRowerSettings,
     IValidationErrors,
 } from "../../../../common/common.interfaces";
+import { METRICS_REVISION } from "../../../../common/data/metrics-revision";
 import { versionInfo } from "../../../../common/data/version";
 import { ConfigManagerService } from "../../../../common/services/config-manager.service";
 import { FirmwareUpdateManagerService } from "../../../../common/services/ergometer/firmware-update-manager.service";
@@ -123,6 +124,7 @@ export class GeneralSettingsComponent implements OnInit {
     readonly settingsFormErrors: Signal<ValidationErrors | null>;
 
     readonly compileDate: Date = new Date(versionInfo.timeStamp);
+    readonly metricsRevision: string = METRICS_REVISION;
     readonly firmwareReleaseUrl: string = FirmwareUpdateManagerService.FIRMWARE_RELEASE_URL;
 
     private readonly previousApiKey: string;
