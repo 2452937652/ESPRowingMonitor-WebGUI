@@ -21,6 +21,7 @@ import {
 } from "../database.interfaces";
 import { appDB } from "../utils/app-database";
 import { createSessionFitFile } from "../utils/fit-file/fit-file";
+import { sessionStrokeRecords } from "../utils/session-stroke-records";
 import { downloadFiles } from "../utils/utility.functions";
 
 interface IStrokePersistenceContext {
@@ -315,6 +316,9 @@ export class DataRecorderService {
 
         return importInto(appDB, blob, {
             overwriteValues: true,
+            // v5 only adds optional fields/indexes and a metadata table to v4.
+            // Do not accept newer/other schemas without a migration.
+            acceptVersionDiff: importMeta.data.databaseVersion === 4 && appDB.verno === 5,
             progressCallback,
         });
     }
@@ -353,9 +357,10 @@ export class DataRecorderService {
         ].join(",");
 
         let csvBody = `${headers}\n`;
-        let previousStroke: IExportRecord | undefined = records[0];
+        const canonical = sessionStrokeRecords(records);
+        let previousStroke: IExportRecord | undefined = canonical[0];
 
-        for (const data of records) {
+        for (const data of canonical) {
             if (this.isDuplicateLogicalStroke(previousStroke, data)) {
                 continue;
             }
@@ -407,10 +412,16 @@ export class DataRecorderService {
 
                 const records: Array<IExportRecord> = [];
                 let totalWork = 0;
+                const workByStroke = new Map<string, number>();
 
                 for (const metric of metricsEntities) {
                     if (metric.isExtendedMetricsPending !== true) {
-                        totalWork += metric.avgStrokePower * (metric.driveDuration + metric.recoveryDuration);
+                        const key = metric.strokeKey ?? `legacy:${metric.strokeCount}`;
+                        const work = metric.avgStrokePower * (metric.driveDuration + metric.recoveryDuration);
+                        if (Number.isFinite(work) && work >= 0) {
+                            totalWork += work - (workByStroke.get(key) ?? 0);
+                            workByStroke.set(key, work);
+                        }
                     }
                     records.push({
                         avgStrokePower: metric.avgStrokePower,

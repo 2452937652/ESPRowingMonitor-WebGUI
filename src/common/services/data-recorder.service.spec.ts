@@ -212,7 +212,7 @@ describe("DataRecorderService", (): void => {
 
             expect(handleForcesPutSpy).toHaveBeenCalledTimes(1);
             expect(handleForcesPutSpy).toHaveBeenCalledWith({
-                timeStamp: mockTimeStamp,
+                timeStamp: mockTimeStamp + 1,
                 sessionId: mockTimeStamp,
                 strokeId: sessionData.strokeCount,
                 handleForces: sessionData.handleForces,
@@ -411,6 +411,7 @@ describe("DataRecorderService", (): void => {
                     appDB.handleForces,
                     appDB.connectedDevice,
                     appDB.laps,
+                    appDB.sessionMetadata,
                     appDB.sessionUploads,
                 ],
                 expect.any(Function),
@@ -601,7 +602,19 @@ describe("DataRecorderService", (): void => {
             const exportedData = JSON.parse(await createdBlobs[0].text());
             expect(exportedData.formatName).toBe("dexie");
             expect(exportedData.data.databaseName).toBe("ESPRowingMonitorDB");
-            expect(exportedData.data.tables).toHaveLength(6);
+            expect(
+                exportedData.data.tables.map((table: { name: string }): string => table.name).sort(),
+            ).toEqual(
+                [
+                    "connectedDevice",
+                    "deltaTimes",
+                    "handleForces",
+                    "laps",
+                    "sessionData",
+                    "sessionMetadata",
+                    "sessionUploads",
+                ].sort(),
+            );
         });
 
         it("should include test data with correct sessionId in exported JSON", async (): Promise<void> => {

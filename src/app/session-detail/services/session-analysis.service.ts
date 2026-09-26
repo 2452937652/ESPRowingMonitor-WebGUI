@@ -15,6 +15,7 @@ import {
     MIN_BALANCE_PAIRS_FOR_CONSISTENCY,
     strokesToBalanceInput,
 } from "../../../common/utils/balance-metrics";
+import { sessionStrokeRecords } from "../../../common/utils/session-stroke-records";
 import {
     ISessionAnalysis,
     ISessionAverages,
@@ -37,7 +38,11 @@ const findPeakForce = (forces: Array<number>): { peakForce: number; peakForceInd
         { peakForce: 0, peakForceIndex: 0 },
     );
 
-const buildLegacyForceCurve = (forces: Array<number>, driveLength: number): Array<IForceCurvePoint> => {
+const buildLegacyForceCurve = (
+    forces: Array<number>,
+    driveLength: number,
+): Array<IForceCurvePoint> | undefined => {
+    if (!(driveLength > 0)) return undefined;
     const sampleDistance = forces.length > 1 && driveLength > 0 ? driveLength / (forces.length - 1) : 1;
 
     return forces.map((force: number, index: number): IForceCurvePoint => ({
@@ -84,8 +89,9 @@ export class SessionAnalysisService {
                 ]);
 
                 const handleForcesMap = this.buildHandleForcesMap(handleForcesEntities);
-                const records = this.buildRecords(metricsEntities);
-                const strokes = this.buildStrokes(metricsEntities, handleForcesMap);
+                const canonical = sessionStrokeRecords(metricsEntities);
+                const records = this.buildRecords(canonical);
+                const strokes = this.buildStrokes(canonical, handleForcesMap);
                 const statistics = this.computeStatistics(strokes);
 
                 return {
@@ -105,7 +111,7 @@ export class SessionAnalysisService {
     }
 
     loadFromJson(exportSession: IExportSession): ISessionAnalysis {
-        const records: Array<ISessionRecord> = exportSession.records.map(
+        const records: Array<ISessionRecord> = sessionStrokeRecords(exportSession.records).map(
             (entry: IExportRecord, index: number): ISessionRecord => ({
                 strokeIndex: entry.strokeCount ?? index,
                 timeStamp: new Date(entry.timeStamp).getTime(),

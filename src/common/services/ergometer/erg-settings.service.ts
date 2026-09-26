@@ -544,7 +544,7 @@ export class ErgSettingsService {
     private observeSettings$(
         settingsCharacteristic: BluetoothRemoteGATTCharacteristic,
     ): Observable<IBleRowerSettingsDTO> {
-        return from(settingsCharacteristic.readValue()).pipe(
+        return defer((): Observable<DataView> => from(settingsCharacteristic.readValue())).pipe(
             concatWith(
                 defer((): Observable<DataView<ArrayBufferLike>> => observeValue$(settingsCharacteristic)),
             ),
@@ -608,16 +608,17 @@ export class ErgSettingsService {
                     },
                 };
             }),
-            finalize((): void => {
-                this.ergConnectionService.resetSettingsCharacteristic();
-            }),
+            // connection teardown owns the characteristic reset. Clearing it on
+            // a transient read failure would leave retry subscribed to undefined.
         );
     }
 
     private observeStrokeSettings$(
         strokeDetectionSettingsCharacteristic: BluetoothRemoteGATTCharacteristic,
     ): Observable<IBleStrokeDetectionSettingsDTO> {
-        return from(strokeDetectionSettingsCharacteristic.readValue()).pipe(
+        return defer((): Observable<DataView> =>
+            from(strokeDetectionSettingsCharacteristic.readValue()),
+        ).pipe(
             concatWith(
                 defer((): Observable<DataView<ArrayBufferLike>> =>
                     observeValue$(strokeDetectionSettingsCharacteristic),

@@ -61,6 +61,16 @@ describe("DataRecorderService v5 persistence", (): void => {
         vi.restoreAllMocks();
     });
 
+    it("counts a legacy stroke once in JSON work even when it has repeated recording rows", async (): Promise<void> => {
+        await service.addSessionData(sessionData());
+        await service.addSessionData({ ...sessionData(), elapsedTime: 2, strokeRate: 0, distPerStroke: 0 });
+        const result = await (
+            service as unknown as { buildExportSession(id: number): Promise<IExportSession> }
+        ).buildExportSession(service.currentSessionId);
+        expect(result.records).toHaveLength(2);
+        expect(result.records[1].totalWork).toBe(300);
+    });
+
     it("upserts late recovery and curve data while keeping completed values sticky", async (): Promise<void> => {
         const pending: ISessionData = {
             ...sessionData(),

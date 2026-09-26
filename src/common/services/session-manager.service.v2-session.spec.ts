@@ -103,6 +103,10 @@ describe("SessionManagerService V2 stroke identity", (): void => {
         context.service.sessionMetrics$.subscribe((metrics: ISessionCalculatedMetrics): void => {
             latestMetrics = metrics;
         });
+        let display: ISessionCalculatedMetrics | undefined;
+        context.service.displayMetrics$.subscribe((value: ISessionCalculatedMetrics): void => {
+            display = value;
+        });
         context.service.start();
 
         const stroke10 = v2Metrics({
@@ -144,6 +148,14 @@ describe("SessionManagerService V2 stroke identity", (): void => {
             peakForce: 240,
         });
         context.strokeMetricUpdatesSubject.next(completedLateStroke10);
+        expect(display).toMatchObject({
+            sourceStrokeId: 11,
+            strokeCount: 2,
+            recoveryDuration: 0.6,
+            avgStrokePower: 100,
+            isExtendedMetricsPending: false,
+        });
+        expect(latestMetrics?.isExtendedMetricsPending).toBe(true);
 
         expect(latestMetrics).toEqual(
             expect.objectContaining({

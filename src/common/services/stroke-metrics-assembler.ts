@@ -16,6 +16,7 @@ export interface IAssembledStrokeMetrics {
     sourceEpoch: number;
     sourceStrokeId: number;
     previousBase: IBaseMetrics;
+    previousStrokeBase?: IBaseMetrics;
     base: IBaseMetrics;
     physicalCurve?: IPhysicalForceCurveV2;
     completedMetrics?: ICompletedStrokeMetricsV2;
@@ -33,6 +34,7 @@ interface IStrokeRecord {
     sourceStrokeId: number;
     base?: IBaseMetrics;
     previousBase?: IBaseMetrics;
+    previousStrokeBase?: IBaseMetrics;
     physicalCurve?: IPhysicalForceCurveV2;
     completedMetrics?: ICompletedStrokeMetricsV2;
 }
@@ -42,6 +44,7 @@ export class StrokeMetricsAssembler {
     private readonly records: Map<string, IStrokeRecord> = new Map<string, IStrokeRecord>();
     private sourceEpochValue: number = 0;
     private lastBase: IBaseMetrics | undefined;
+    private strokeBoundary: IBaseMetrics | undefined;
     private currentStrokeIdValue: number | undefined;
 
     get sourceEpoch(): number {
@@ -56,6 +59,7 @@ export class StrokeMetricsAssembler {
         this.sourceEpochValue++;
         this.records.clear();
         this.lastBase = undefined;
+        this.strokeBoundary = undefined;
         this.currentStrokeIdValue = undefined;
 
         return this.sourceEpochValue;
@@ -112,6 +116,10 @@ export class StrokeMetricsAssembler {
         const previousBase: IBaseMetrics = this.lastBase ?? base;
         const sourceStrokeId: number = base.strokeCount;
         const record: IStrokeRecord = this.recordFor(sourceStrokeId);
+        if (record.base === undefined) {
+            record.previousStrokeBase = { ...(this.strokeBoundary ?? previousBase) };
+            this.strokeBoundary = { ...base };
+        }
         record.previousBase = { ...previousBase };
         record.base = { ...base };
         this.lastBase = { ...base };
@@ -546,6 +554,7 @@ export class StrokeMetricsAssembler {
                 sourceEpoch: record.sourceEpoch,
                 sourceStrokeId: record.sourceStrokeId,
                 previousBase: { ...previousBase },
+                previousStrokeBase: record.previousStrokeBase,
                 base: { ...base },
             };
         }
@@ -554,6 +563,7 @@ export class StrokeMetricsAssembler {
             sourceEpoch: record.sourceEpoch,
             sourceStrokeId: record.sourceStrokeId,
             previousBase: { ...previousBase },
+            previousStrokeBase: record.previousStrokeBase,
             base: { ...base },
             physicalCurve: physicalCurve === undefined ? undefined : this.copyPhysicalCurve(physicalCurve),
             completedMetrics:
