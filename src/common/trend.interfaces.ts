@@ -1,5 +1,5 @@
 /** Visual treatment for the short-term metric history rendered on the dashboard. */
-export type TrendStyle = "bars" | "line" | "area";
+export type TrendStyle = "bars" | "line" | "area" | "off";
 
 /** Metric keys whose values can be represented by the shared micro-trend component. */
 export type TrendMetricKey =
@@ -21,6 +21,8 @@ export type TrendMetricKey =
     | "speed"
     | "driveLength"
     | "totalWork";
+
+export const TREND_WINDOW_SIZE = 20;
 
 export type TrendHistory = Readonly<Record<TrendMetricKey, ReadonlyArray<number>>>;
 

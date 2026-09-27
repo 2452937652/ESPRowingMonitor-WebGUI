@@ -10,6 +10,7 @@ import { MetricComponent } from "../metric/metric.component";
     selector: "app-distance-tile",
     template: `
         <app-metric
+            [trendEnabled]="false"
             [title]="label()"
             [icon]="icon()"
             [value]="(distance() | number: (isImperial() ? '0.0-2' : '0.0-0')) ?? '--'"

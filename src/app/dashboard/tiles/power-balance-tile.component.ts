@@ -6,8 +6,15 @@ import { MetricComponent } from "../metric/metric.component";
 
 @Component({
     selector: "app-power-balance-tile",
-    template: ` <app-metric [title]="label()" [icon]="icon()" [value]="displayValue()"></app-metric> `,
-    styles: [":host { --metric-value-font-size: 0.5em; }"],
+    template: `
+        <app-metric
+            [trendEnabled]="false"
+            [title]="label()"
+            [icon]="icon()"
+            [value]="displayValue()"
+        ></app-metric>
+    `,
+    styles: [":host { --metric-value-font-size: min(13cqi, 28cqb); }"],
     changeDetection: ChangeDetectionStrategy.OnPush,
     imports: [MetricComponent],
 })

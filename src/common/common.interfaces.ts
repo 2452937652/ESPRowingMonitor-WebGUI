@@ -93,6 +93,7 @@ export interface IDisplayGeneralConfig {
     unitSystem: UnitSystem;
     /** Optional for backwards compatibility with saved pre-trend configurations. */
     trendStyle?: TrendStyle;
+    showTrends?: boolean;
 }
 
 /**
@@ -160,6 +161,7 @@ export class Config {
         general: {
             unitSystem: "metric",
             trendStyle: "bars",
+            showTrends: true,
         },
         forceCurve: {
             showPeakForceInTitle: true,

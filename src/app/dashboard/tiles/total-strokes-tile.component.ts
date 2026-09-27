@@ -8,6 +8,7 @@ import { MetricComponent } from "../metric/metric.component";
     selector: "app-total-strokes-tile",
     template: `
         <app-metric
+            [trendEnabled]="false"
             [title]="label()"
             [icon]="icon()"
             unit="stk"

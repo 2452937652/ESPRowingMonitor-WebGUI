@@ -27,7 +27,12 @@ import { ErgConnectionService } from "../../common/services/ergometer/erg-connec
 import { MetricsService } from "../../common/services/metrics.service";
 import { SessionManagerService } from "../../common/services/session-manager.service";
 import { UtilsService } from "../../common/services/utils.service";
-import { EMPTY_TREND_HISTORY, TrendHistory, TrendMetricKey } from "../../common/trend.interfaces";
+import {
+    EMPTY_TREND_HISTORY,
+    TREND_WINDOW_SIZE,
+    TrendHistory,
+    TrendMetricKey,
+} from "../../common/trend.interfaces";
 
 import { CompletedMetricsDisplay, updateCompletedMetricsDisplay } from "./completed-metrics-display";
 import {
@@ -194,7 +199,10 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
         displayConfig: (): IDisplayConfig => this.displayConfig(),
         deviceName: (): string | undefined => this.deviceName(),
         trendHistory: (): TrendHistory => this.trendHistory(),
-        trendStyle: (): "bars" | "line" | "area" => this.displayConfig().general.trendStyle ?? "bars",
+        trendStyle: (): "bars" | "line" | "area" | "off" =>
+            this.displayConfig().general.showTrends === false
+                ? "off"
+                : (this.displayConfig().general.trendStyle ?? "bars"),
     };
 
     private readonly isDeviceOrientationPortrait: Signal<boolean>;
@@ -512,7 +520,7 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
                 continue;
             }
 
-            history[key] = [...history[key], value].slice(-10);
+            history[key] = [...history[key], value].slice(-TREND_WINDOW_SIZE);
         }
 
         return {

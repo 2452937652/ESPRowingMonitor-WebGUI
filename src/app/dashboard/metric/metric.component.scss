@@ -5,14 +5,16 @@ mat-card {
     box-sizing: border-box;
     overflow: hidden;
     border: 1px solid rgba(38, 113, 184, 0.1);
-    border-radius: 18px;
+    border-radius: 14px;
     background: rgba(255, 255, 255, 0.92);
-    box-shadow: 0 8px 24px rgba(27, 78, 125, 0.08);
+    box-shadow: 0 3px 12px rgba(27, 78, 125, 0.06);
 }
 
 .metric {
+    height: 100%;
+    box-sizing: border-box;
     min-width: 0;
-    padding: clamp(0.55rem, 2.8cqi, 1.1rem);
+    padding: clamp(0.45rem, 3cqi, 1.1rem);
     align-items: stretch;
     gap: 0.25rem;
     color: #12233d;
@@ -25,6 +27,7 @@ mat-card {
 }
 
 .metric-heading {
+    flex: 0 0 auto;
     display: flex;
     width: 100%;
     min-width: 0;
@@ -65,6 +68,7 @@ mat-icon {
 }
 
 .value {
+    margin-block: auto;
     display: flex;
     align-items: baseline;
     flex-wrap: nowrap;
@@ -80,11 +84,9 @@ mat-icon {
         color: #102447;
         // Use the available card space instead of capping normal values at 46 px.
         // cqmin keeps a shallow, wide tile from overflowing vertically.
-        font-size: var(
-            --metric-value-font-size,
-            min(clamp(2rem, 24cqi, 7rem), clamp(2rem, 40cqmin, 7rem))
-        );
+        font-size: var(--metric-value-font-size, min(24cqi, 35cqb));
         font-weight: 760;
+        font-variant-numeric: tabular-nums;
         letter-spacing: -0.045em;
     }
 
@@ -99,5 +101,16 @@ mat-icon {
 
 app-metric-trend-chart {
     width: 100%;
-    margin-top: auto;
+    flex: 0 0 28cqb;
+    height: 28cqb;
+    max-height: 6rem;
+    margin-top: 0.15rem;
+}
+
+.numbers-only .value > span:first-child {
+    font-size: var(--metric-value-font-size, min(29cqi, 58cqb));
+}
+
+.numbers-only .value {
+    margin-block: auto;
 }

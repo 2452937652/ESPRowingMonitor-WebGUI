@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, input, InputSignal, Signal } from "@angular/core";
 
-import { TrendStyle } from "../../../common/trend.interfaces";
+import { TREND_WINDOW_SIZE, TrendStyle } from "../../../common/trend.interfaces";
 
 interface TrendPoint {
     readonly x: number;
@@ -10,9 +10,9 @@ interface TrendPoint {
 }
 
 const CHART_WIDTH = 120;
-const BASELINE = 27;
-const TOP = 4;
-const START_COLOR = [190, 229, 255] as const;
+const BASELINE = 60;
+const TOP = 6;
+const START_COLOR = [83, 160, 218] as const;
 const END_COLOR = [20, 101, 211] as const;
 
 /**
@@ -27,7 +27,7 @@ const END_COLOR = [20, 101, 211] as const;
     template: `
         <svg
             class="trend-chart"
-            viewBox="0 0 120 32"
+            viewBox="0 0 120 64"
             preserveAspectRatio="none"
             role="img"
             [attr.aria-label]="label() + ' recent trend'"
@@ -39,7 +39,7 @@ const END_COLOR = [20, 101, 211] as const;
                 </linearGradient>
             </defs>
             @if (!hasData()) {
-                <path class="trend-empty" d="M2 27 H118"></path>
+                <path class="trend-empty" d="M2 60 H118"></path>
             } @else {
                 @switch (chartStyle()) {
                     @case ("bars") {
@@ -62,7 +62,7 @@ const END_COLOR = [20, 101, 211] as const;
                                 class="trend-dot"
                                 [attr.cx]="point.x"
                                 [attr.cy]="point.y"
-                                r="2.2"
+                                r="1.3"
                                 [attr.fill]="point.color"
                             ></circle>
                         }
@@ -80,8 +80,8 @@ const END_COLOR = [20, 101, 211] as const;
             :host {
                 display: block;
                 width: 100%;
-                height: 1.45rem;
-                min-height: 1.25rem;
+                height: 100%;
+                min-height: 0;
             }
 
             .trend-chart {
@@ -151,10 +151,12 @@ export class MetricTrendChartComponent {
     readonly label: InputSignal<string> = input<string>("");
 
     readonly points: Signal<ReadonlyArray<TrendPoint>> = computed((): ReadonlyArray<TrendPoint> => {
-        const values = this.samples().filter((value: number): boolean => Number.isFinite(value));
-        const intensityValues = this.intensitySamples().filter((value: number): boolean =>
-            Number.isFinite(value),
-        );
+        const values = this.samples()
+            .slice(-TREND_WINDOW_SIZE)
+            .filter((value: number): boolean => Number.isFinite(value));
+        const intensityValues = this.intensitySamples()
+            .slice(-TREND_WINDOW_SIZE)
+            .filter((value: number): boolean => Number.isFinite(value));
         const colorValues = intensityValues.length === values.length ? intensityValues : values;
 
         if (values.length === 0) {
@@ -167,15 +169,15 @@ export class MetricTrendChartComponent {
         const colorMin = Math.min(...colorValues);
         const colorMax = Math.max(...colorValues);
         const colorSpread = colorMax - colorMin;
-        const step = values.length === 1 ? 0 : (CHART_WIDTH - 4) / (values.length - 1);
+        const step = (CHART_WIDTH - 4) / TREND_WINDOW_SIZE;
 
         return values.map((value: number, index: number): TrendPoint => {
             const valueIntensity = valueSpread === 0 ? 0.5 : (value - valueMin) / valueSpread;
             const colorIntensity = colorSpread === 0 ? 0.5 : (colorValues[index] - colorMin) / colorSpread;
-            const y = BASELINE - (TOP + valueIntensity * (BASELINE - TOP));
+            const y = BASELINE - (8 + valueIntensity * (BASELINE - TOP - 8));
 
             return {
-                x: values.length === 1 ? CHART_WIDTH / 2 : 2 + index * step,
+                x: 2 + (index + 0.5) * step,
                 y,
                 intensity: colorIntensity,
                 color: this.interpolateColor(colorIntensity),
@@ -185,9 +187,7 @@ export class MetricTrendChartComponent {
 
     readonly hasData: Signal<boolean> = computed((): boolean => this.points().length > 0);
     readonly barWidth: Signal<number> = computed((): number => {
-        const count = this.points().length;
-
-        return count === 0 ? 6 : Math.max(3, Math.min(9, (CHART_WIDTH - 4) / count - 1.5));
+        return (CHART_WIDTH - 4) / TREND_WINDOW_SIZE - 1.6;
     });
     readonly linePath: Signal<string> = computed((): string => this.buildSmoothPath(this.points()));
     readonly areaPath: Signal<string> = computed((): string => {
