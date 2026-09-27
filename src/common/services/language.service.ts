@@ -41,6 +41,8 @@ export class LanguageService implements OnDestroy {
         "Trend style:": "趋势样式：",
         "Gradient bars": "渐变条",
         "Line + dots": "折线＋点",
+        "Stroke trends:": "逐桨趋势：",
+        "Show last 20 strokes": "显示最近 20 桨趋势（关闭可放大数字）",
         "Smooth area": "平滑面积",
         "Metrics Averaging": "指标平均",
         "Mode:": "模式：",

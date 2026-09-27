@@ -8,6 +8,7 @@ import { MetricComponent } from "../metric/metric.component";
     selector: "app-timer-tile",
     template: `
         <app-metric
+            [trendEnabled]="false"
             [title]="label()"
             [icon]="icon()"
             [value]="elapseTime() | secondsToTime: 'pace'"

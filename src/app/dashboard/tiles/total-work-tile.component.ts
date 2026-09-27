@@ -8,6 +8,7 @@ import { MetricComponent } from "../metric/metric.component";
     selector: "app-total-work-tile",
     template: `
         <app-metric
+            [trendEnabled]="false"
             [title]="label()"
             [icon]="icon()"
             [value]="(totalWorkKj() | number: '0.0-1') ?? '--'"

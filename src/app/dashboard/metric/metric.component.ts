@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, input, InputSignal } from "@angular/core";
+import { ChangeDetectionStrategy, Component, computed, input, InputSignal, Signal } from "@angular/core";
 import { MatCard } from "@angular/material/card";
 import { MatIcon } from "@angular/material/icon";
 import { MatTooltip } from "@angular/material/tooltip";
@@ -15,6 +15,10 @@ import { MetricTrendChartComponent } from "./metric-trend-chart.component";
     imports: [MatCard, MatIcon, MatTooltip, MetricTrendChartComponent],
 })
 export class MetricComponent {
+    readonly trendEnabled: InputSignal<boolean> = input(true);
+    readonly showTrend: Signal<boolean> = computed(
+        (): boolean => this.trendEnabled() && this.trendStyle() !== "off",
+    );
     readonly icon: InputSignal<string | undefined> = input();
     readonly title: InputSignal<string | undefined> = input();
     readonly unit: InputSignal<string | undefined> = input();

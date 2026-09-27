@@ -56,6 +56,7 @@ type DisplaySettingsFormGroup = FormGroup<{
     axisMaxForceN: FormControl<number>;
     unitSystem: FormControl<UnitSystem>;
     trendStyle: FormControl<TrendStyle>;
+    showTrends: FormControl<boolean>;
     averagingMode: FormControl<AveragingMode>;
     averagingWindowSize: FormControl<number>;
 }>;
@@ -155,6 +156,7 @@ export class DisplaySettingsComponent {
             ],
             unitSystem: [config.display.general.unitSystem],
             trendStyle: [config.display.general.trendStyle ?? "bars"],
+            showTrends: [config.display.general.showTrends ?? true],
             averagingMode: [config.display.averaging.mode],
             averagingWindowSize: [config.display.averaging.windowSize],
         });
