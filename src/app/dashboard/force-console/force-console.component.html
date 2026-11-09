@@ -91,7 +91,9 @@
                             (change)="selectMetric($index, $event)"
                         >
                             @for (choice of metricChoices; track choice.key) {
-                                <option [value]="choice.key">{{ choice.label }}</option>
+                                <option [value]="choice.key" [selected]="choice.key === key">
+                                    {{ choice.label }}
+                                </option>
                             }
                         </select>
                     </div>
