@@ -16,7 +16,8 @@
         "test": "npm run test:tools && ng test --watch=false",
         "test:tools": "vitest run tools/",
         "generate-version": "npm run build:tools && node out-tsc/tools/auto-version.js",
-        "fetch-profiles": "npm run build:tools && node out-tsc/tools/fetch-profiles.js"
+        "fetch-profiles": "npm run build:tools && node out-tsc/tools/fetch-profiles.js",
+        "build:worker": "ng build --configuration production && node tools/package-worker.mjs"
     },
     "private": true,
     "dependencies": {

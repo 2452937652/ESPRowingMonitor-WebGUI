@@ -8,6 +8,7 @@ import {
     effect,
     OnDestroy,
     Signal,
+    signal,
     Type,
 } from "@angular/core";
 import { toSignal } from "@angular/core/rxjs-interop";
@@ -48,6 +49,7 @@ import {
     TileComponentInputs,
 } from "./dashboard-tile-definitions";
 import { DashboardTileDefinition, PlacedDashboardTile } from "./dashboard.interfaces";
+import { ForceConsoleComponent } from "./force-console/force-console.component";
 import { SettingsBarComponent } from "./settings-bar/settings-bar.component";
 
 type NumericMetricKey = {
@@ -115,9 +117,11 @@ interface ScreenOrientationWithLock extends ScreenOrientation {
     templateUrl: "./dashboard.component.html",
     styleUrls: ["./dashboard.component.scss"],
     changeDetection: ChangeDetectionStrategy.OnPush,
-    imports: [SettingsBarComponent, NgComponentOutlet],
+    imports: [SettingsBarComponent, NgComponentOutlet, ForceConsoleComponent],
 })
 export class DashboardComponent implements AfterViewInit, OnDestroy {
+    readonly view = signal<"curve" | "dashboard">("curve");
+    readonly curveMetrics: Signal<ICalculatedMetrics>;
     readonly elapseTime: Signal<number> = this.sessionManager.elapsedTime;
     readonly heartRateData: Signal<IHeartRate | undefined> = toSignal(this.metricsService.heartRateData$, {
         requireSync: true,
@@ -266,6 +270,14 @@ export class DashboardComponent implements AfterViewInit, OnDestroy {
                 ),
             ),
             { initialValue: EMPTY_TREND_HISTORY },
+        );
+
+        this.curveMetrics = toSignal(
+            (this.sessionManager.displayMetrics$ ?? this.sessionManager.sessionMetrics$).pipe(
+                scan(updateCompletedMetricsDisplay, {} as CompletedMetricsDisplay),
+                map((state: CompletedMetricsDisplay): ICalculatedMetrics => state.current!),
+            ),
+            { initialValue: ZERO_METRICS },
         );
 
         this.rowingData = toSignal(

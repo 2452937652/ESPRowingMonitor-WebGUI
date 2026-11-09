@@ -1,0 +1,284 @@
+:host {
+    display: block;
+    font-size: 16px;
+    color: #f1f7ff;
+    font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+    font-variant-numeric: tabular-nums;
+}
+.console {
+    background: #102e4a;
+    border-radius: 18px;
+    overflow: hidden;
+    margin: 0 20px 22px;
+    box-shadow: 0 18px 48px #091e3020;
+}
+.console-header {
+    padding: 20px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+.eyebrow {
+    font-size: 11px;
+    letter-spacing: 2px;
+    color: #a8bed3;
+}
+h1 {
+    margin: 6px 0 0;
+    font-size: 25px;
+    font-weight: 500;
+}
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.connection {
+    font-size: 12px;
+    color: #b8cada;
+}
+.online {
+    color: #d9eb64;
+}
+button,
+select {
+    font: inherit;
+    font-size: 13px;
+    color: #eef5fd;
+    background: #1b405e;
+    border: 1px solid #526e88;
+    border-radius: 6px;
+    padding: 10px 14px;
+    cursor: pointer;
+    min-height: 42px;
+}
+button:hover {
+    background: #2b5373;
+}
+button:focus-visible,
+select:focus-visible {
+    outline: 2px solid #d9eb64 !important;
+    outline-offset: 3px;
+}
+.console-body {
+    display: grid;
+    grid-template-columns: 190px minmax(0, 1fr);
+}
+.sidebar {
+    background: #091e30;
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.time {
+    padding: 5px 8px 12px;
+    text-align: right;
+}
+.time span {
+    font-size: 34px;
+    display: block;
+}
+small {
+    display: block;
+    font-size: 12px;
+    color: #b8cada;
+    line-height: 1.6;
+}
+.side-cell {
+    padding: 16px 12px;
+    background: #1a3e5c;
+    text-align: right;
+    border-radius: 5px;
+}
+.side-cell > span {
+    font-size: clamp(28px, 3.4vw, 48px);
+    font-weight: 400;
+    line-height: 1.15;
+}
+.graph-pane {
+    min-width: 0;
+    padding: 12px 24px 16px;
+}
+.graph-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+.legend {
+    display: flex;
+    gap: 22px;
+    flex-wrap: wrap;
+    font-size: 12px;
+    color: #b8cada;
+}
+.previous-label {
+    opacity: 0.72;
+}
+.axis-switch {
+    display: flex;
+    gap: 5px;
+}
+.axis-switch button {
+    min-height: 38px;
+    padding: 7px 14px;
+}
+.axis-switch [aria-pressed="true"] {
+    color: #102e4a;
+    background: #d9eb64;
+    border-color: #d9eb64;
+}
+.plot {
+    height: clamp(270px, 44vh, 520px);
+    position: relative;
+    margin: 12px 0 5px;
+}
+.plot canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+.empty-state {
+    position: absolute;
+    inset: 20% 10%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 12px;
+    text-align: center;
+    pointer-events: none;
+    font-size: 14px;
+    color: #b8cada;
+}
+.empty-state strong {
+    font-size: 20px;
+    font-weight: 400;
+    color: #eef5fd;
+}
+.metric-row {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+}
+.metric {
+    min-width: 0;
+    background: #1a3e5c;
+    border-radius: 5px;
+    padding: 12px 14px;
+}
+.metric-value {
+    font-size: clamp(28px, 4vw, 48px);
+    line-height: 1.2;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.metric-value small {
+    font-size: 11px;
+}
+.peak-position > .metric-value {
+    color: #d9eb64;
+}
+.metric select {
+    max-width: 100%;
+    width: 100%;
+    margin-top: 7px;
+    border: 0;
+    padding: 6px 0;
+    background: transparent;
+    min-height: 32px;
+    font-size: 12px;
+}
+.metric option {
+    background: #1a3e5c;
+    color: #fff;
+}
+.graph-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 14px;
+    color: #adc4d8;
+    font-size: 11px;
+    flex-wrap: wrap;
+}
+@media (max-width: 680px) {
+    .console {
+        margin: 0 10px 16px;
+        border-radius: 12px;
+    }
+    .console-header {
+        padding: 16px;
+        gap: 14px;
+    }
+    .console-body {
+        grid-template-columns: 1fr;
+    }
+    .sidebar {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        padding: 10px;
+        gap: 8px;
+    }
+    .time {
+        display: none;
+    }
+    .side-cell {
+        padding: 12px 5px;
+        text-align: center;
+    }
+    .side-cell > span {
+        font-size: 30px;
+    }
+    .side-cell small {
+        font-size: 11px;
+    }
+    .graph-pane {
+        padding: 12px;
+    }
+    .plot {
+        height: 320px;
+    }
+    .legend {
+        font-size: 11px;
+        gap: 14px;
+    }
+    .metric-row {
+        gap: 6px;
+    }
+    .metric {
+        padding: 10px 8px;
+    }
+    .metric-value {
+        font-size: 31px;
+        gap: 4px;
+    }
+    .metric select {
+        font-size: 11px;
+    }
+    h1 {
+        font-size: 23px;
+    }
+}
+@media (max-width: 380px) {
+    .plot {
+        height: 270px;
+    }
+    .metric-value {
+        font-size: 27px;
+    }
+    .header-actions {
+        gap: 7px;
+    }
+    .connection {
+        width: 100%;
+    }
+}

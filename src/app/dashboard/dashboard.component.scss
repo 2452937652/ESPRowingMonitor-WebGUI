@@ -30,3 +30,55 @@
 [data-tile-type="forceCurve"] {
     min-height: 14rem;
 }
+
+.version-navigation {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 14px 20px;
+    font-size: 13px;
+    font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+}
+.view-switch {
+    display: flex;
+    gap: 6px;
+}
+.view-switch button {
+    font: inherit;
+    border: 1px solid #ccd8e4;
+    background: #fff;
+    border-radius: 7px;
+    padding: 10px 14px;
+    color: #2d4c68;
+    cursor: pointer;
+    min-height: 42px;
+}
+.view-switch [aria-pressed="true"] {
+    background: #102e4a;
+    color: #fff;
+    border-color: #102e4a;
+}
+.version-links {
+    display: flex;
+    gap: 16px;
+}
+.version-links a {
+    color: #3c5f7c;
+    text-decoration: none;
+    padding-block: 8px;
+}
+.version-navigation :focus-visible {
+    outline: 2px solid #1674d1 !important;
+    outline-offset: 3px;
+}
+@media (max-width: 680px) {
+    .version-navigation {
+        margin: 12px 10px;
+    }
+    .version-links {
+        font-size: 12px;
+        gap: 12px;
+    }
+}

@@ -1,0 +1,106 @@
+<section class="console" aria-label="划船机 2.0 力曲线控制台">
+    <header class="console-header">
+        <div>
+            <span class="eyebrow">ROWING MONITOR / 2.0</span>
+            <h1>拉力曲线</h1>
+        </div>
+        <div class="header-actions">
+            <span class="connection" [class.online]="connection().status === 'connected'">
+                {{
+                    demo() ? "演示数据" : connection().status === "connected" ? "蓝牙已连接" : "等待蓝牙连接"
+                }}
+            </span>
+            @if (connection().status !== "connected") {
+                <button type="button" (click)="toggleDemo()">{{ demo() ? "退出演示" : "体验演示" }}</button>
+            }
+            @if (demo()) {
+                <button type="button" (click)="nextDemo()">下一桨</button>
+            }
+        </div>
+    </header>
+    <div class="console-body">
+        <aside class="sidebar" aria-label="训练数据">
+            <div class="time">
+                <span>{{ timeLabel() }}</span
+                ><small>训练时间</small>
+            </div>
+            <div class="side-cell">
+                <span>{{
+                    currentLength() === undefined ? "—" : (currentLength()! * 100 | number: "1.0-0")
+                }}</span
+                ><small>拉桨长度 · cm</small>
+            </div>
+            <div class="side-cell">
+                <span>{{ activeMetrics().avgStrokePower | number: "1.0-0" }}</span
+                ><small>功率 · W</small>
+            </div>
+            <div class="side-cell">
+                <span>{{ activeMetrics().strokeRate | number: "1.0-0" }}</span
+                ><small>桨频 · 次/分钟</small>
+            </div>
+        </aside>
+        <main class="graph-pane">
+            <div class="graph-toolbar">
+                <div class="legend">
+                    <span>实线 · 最近一桨</span><span class="previous-label">虚线 · 上一桨</span>
+                </div>
+                <div class="axis-switch" role="group" aria-label="曲线横轴">
+                    <button
+                        type="button"
+                        [attr.aria-pressed]="axis() === 'distance'"
+                        (click)="axis.set('distance')"
+                    >
+                        距离
+                    </button>
+                    <button type="button" [attr.aria-pressed]="axis() === 'time'" (click)="axis.set('time')">
+                        时间
+                    </button>
+                </div>
+            </div>
+            <div class="plot">
+                <canvas
+                    baseChart
+                    type="line"
+                    [data]="chartData()"
+                    [options]="options()"
+                    [plugins]="plugins"
+                    role="img"
+                    [attr.aria-label]="
+                        '最近一桨与上一桨拉力曲线，峰值 ' +
+                        metricValue('peak') +
+                        ' 牛顿，峰值位置 ' +
+                        metricValue('position')
+                    "
+                ></canvas>
+                @if (!history().current) {
+                    <div class="empty-state">
+                        <strong>等待第一条完整力曲线</strong
+                        ><span>连接划船机并拉桨，或点击“体验演示”查看效果。</span>
+                    </div>
+                }
+            </div>
+            <div class="metric-row" aria-live="polite" aria-atomic="true">
+                @for (key of selectedMetrics(); track $index) {
+                    <div class="metric" [class.peak-position]="key === 'position'">
+                        <span class="metric-value"
+                            >{{ metricValue(key) }}<small>{{ metricUnit(key) }}</small></span
+                        >
+                        <select
+                            [value]="key"
+                            [attr.aria-label]="'选择第 ' + ($index + 1) + ' 个指标'"
+                            (change)="selectMetric($index, $event)"
+                        >
+                            @for (choice of metricChoices; track choice.key) {
+                                <option [value]="choice.key">{{ choice.label }}</option>
+                            }
+                        </select>
+                    </div>
+                }
+            </div>
+            <div class="graph-footer">
+                <span>第 {{ strokeLabel() }} 桨</span
+                ><span>{{ demo() ? "模拟数据 · 不写入训练记录" : "按完整桨更新 · 同尺度对比" }}</span>
+            </div>
+        </main>
+    </div>
+</section>

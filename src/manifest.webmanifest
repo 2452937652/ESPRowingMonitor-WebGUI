@@ -1,12 +1,13 @@
 {
-    "name": "ESP Rowing Monitor",
-    "short_name": "ESPRM",
-    "theme_color": "#1976d2",
-    "background_color": "#fafafa",
+    "id": "/rowing-monitor-v2",
+    "name": "风阻划船机 2.0",
+    "short_name": "Rowing 2.0",
+    "theme_color": "#102e4a",
+    "background_color": "#102e4a",
     "display": "fullscreen",
-    "description": "A Web Gui for ESP Rowing Monitor",
+    "description": "独立的六磁铁划船机训练控制台，支持完整桨曲线对比。",
     "scope": "./",
-    "start_url": "./",
+    "start_url": "/",
     "screenshots": [
         {
             "src": "assets/screenshots/main-screen.png",

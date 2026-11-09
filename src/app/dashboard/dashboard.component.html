@@ -1,18 +1,40 @@
 <app-settings-bar></app-settings-bar>
-@let entries = tileEntries();
-<div class="grid dashboard" [style.--dashboard-cols]="gridColumns()" [style.--dashboard-rows]="gridRows()">
-    @for (tile of layoutTiles(); track tile.id) {
-        @let entry = entries.get(tile.id);
-        <div
-            class="tile"
-            [attr.data-tile-type]="tile.id"
-            [style.grid-row]="tile.position.rowStart + ' / span ' + tile.position.rowSpan"
-            [style.grid-column]="tile.position.columnStart + ' / span ' + tile.position.columnSpan"
-        >
-            <ng-container
-                [ngComponentOutlet]="entry?.component ?? null"
-                [ngComponentOutletInputs]="entry?.inputs ?? {}"
-            ></ng-container>
-        </div>
-    }
-</div>
+<nav class="version-navigation" aria-label="划船机页面">
+    <div class="view-switch" role="group" aria-label="切换视图">
+        <button type="button" [attr.aria-pressed]="view() === 'curve'" (click)="view.set('curve')">
+            2.0 力曲线
+        </button>
+        <button type="button" [attr.aria-pressed]="view() === 'dashboard'" (click)="view.set('dashboard')">
+            训练仪表盘
+        </button>
+    </div>
+    <div class="version-links">
+        <a href="https://esp-rowing-monitor-webgui.edgeone.dev/" target="_blank" rel="noopener">打开旧版</a
+        ><a href="https://start.noctis.uno/">导航页</a>
+    </div>
+</nav>
+@if (view() === "curve") {
+    <app-force-console [metrics]="curveMetrics()" [elapsedTime]="elapseTime()"></app-force-console>
+} @else {
+    @let entries = tileEntries();
+    <div
+        class="grid dashboard"
+        [style.--dashboard-cols]="gridColumns()"
+        [style.--dashboard-rows]="gridRows()"
+    >
+        @for (tile of layoutTiles(); track tile.id) {
+            @let entry = entries.get(tile.id);
+            <div
+                class="tile"
+                [attr.data-tile-type]="tile.id"
+                [style.grid-row]="tile.position.rowStart + ' / span ' + tile.position.rowSpan"
+                [style.grid-column]="tile.position.columnStart + ' / span ' + tile.position.columnSpan"
+            >
+                <ng-container
+                    [ngComponentOutlet]="entry?.component ?? null"
+                    [ngComponentOutletInputs]="entry?.inputs ?? {}"
+                ></ng-container>
+            </div>
+        }
+    </div>
+}

@@ -714,6 +714,9 @@ describe("DashboardComponent", (): void => {
     });
 
     describe("as part of template rendering", (): void => {
+        beforeEach((): void => {
+            component.view.set("dashboard");
+        });
         it("should render tiles based on layout config", (): void => {
             fixture.detectChanges();
 
